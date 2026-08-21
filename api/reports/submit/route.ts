@@ -8,7 +8,7 @@ import { getAuthenticatedUser } from '@/lib/backend/services/authService';
 export async function POST(req: NextRequest) {
   try {
     const authUser = await getAuthenticatedUser(req);
-    const body: IngestionPayload & { submittingPractitionerId?: string } = await req.json();
+    const body = (await req.json()) as IngestionPayload & { submittingPractitionerId?: string };
 
     if (!body.caseReference) {
       return NextResponse.json(

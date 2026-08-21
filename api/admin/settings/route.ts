@@ -22,7 +22,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as any;
     if (typeof body.reportFeeAUD === 'number' && body.reportFeeAUD > 0) {
       const updatedFee = await setReportFeeAUD(body.reportFeeAUD);
       return NextResponse.json({

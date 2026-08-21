@@ -26,7 +26,17 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = (await req.json()) as {
+      fullName?: string;
+      professionalTitle?: string;
+      profession?: string;
+      providerNumber?: string;
+      clinicName?: string;
+      practiceAddress?: string;
+      phone?: string;
+      practiceEmail?: string;
+      notificationEmail?: string;
+    };
     const {
       fullName,
       professionalTitle,

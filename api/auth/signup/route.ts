@@ -6,7 +6,7 @@ import { UserRole } from '@/generated/prisma/client';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as any;
     const {
       email,
       password,

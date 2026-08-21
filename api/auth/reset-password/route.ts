@@ -5,7 +5,7 @@ import { logActivity } from '@/lib/backend/services/activityLogger';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as any;
     const { token, newPassword } = body;
 
     if (!token || !newPassword) {

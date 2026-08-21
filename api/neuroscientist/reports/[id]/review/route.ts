@@ -18,7 +18,7 @@ export async function POST(
     }
 
     const { id } = await context.params;
-    const body = await req.json();
+    const body = (await req.json()) as any;
     const { action, reviewerNotes, editedSummary, findings } = body;
 
     const report = await prisma.qeeqReport.findUnique({
