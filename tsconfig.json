@@ -10,10 +10,10 @@
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
+      "@/*": ["./*"],
       "@/lib/*": ["lib/*"],
-      "@/lib/backend/*": ["lib/*"],
-      "@/generated/*": ["generated/*"]
+      "@/generated/*": ["./generated/*"]
     }
   },
-  "include": ["lib/**/*", "api/**/*", "prisma.config.ts"]
+  "include": ["lib/**/*", "api/**/*", "generated/**/*", "prisma.config.ts"]
 }
