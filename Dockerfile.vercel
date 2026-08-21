@@ -38,7 +38,6 @@ COPY --from=builder /app/prisma.config.ts ./
 COPY --from=builder /app/api ./api
 COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/lib ./lib
-COPY --from=builder /app/python-engine ./python-engine
 COPY --from=builder /app/uploads ./uploads
 
 # Set a non-root user for security
