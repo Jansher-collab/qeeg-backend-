@@ -34,11 +34,10 @@ COPY --from=builder /app/server.ts ./
 COPY --from=builder /app/tsconfig.json ./
 COPY --from=builder /app/prisma.config.ts ./
 
-# Copy all your functional folders
+# Copy actual functional folders present in your backend directory
 COPY --from=builder /app/api ./api
 COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/lib ./lib
-COPY --from=builder /app/services ./services
 COPY --from=builder /app/python-engine ./python-engine
 COPY --from=builder /app/uploads ./uploads
 
