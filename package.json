@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "build": "tsc || true",
-    "postinstall": "prisma generate",
+    "build": "npx prisma generate && tsc || true",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
