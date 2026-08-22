@@ -6,7 +6,7 @@
  "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "build": "npx prisma generate && tsc || true",
+    "build": "prisma generate && next build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
