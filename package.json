@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "QEEG.com.au backend services, database schema, and processing engine",
   "main": "server.ts",
-  "scripts": {
+ "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "build": "npx prisma generate && tsc || true",
+    "build": "DATABASE_URL=\"$DATABASE_URL\" npx prisma generate && tsc || true",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
