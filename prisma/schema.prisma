@@ -5,8 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // We use a dummy URL for the build phase if the env variable is missing
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") ?? "postgresql://postgres:postgres@localhost:5432/qeeg_db?schema=public"
 }
 
 enum UserRole {
