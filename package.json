@@ -6,7 +6,7 @@
  "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "build": "DATABASE_URL=\"$DATABASE_URL\" npx prisma generate && tsc || true",
+    "build": "DATABASE_URL=${DATABASE_URL} npx prisma generate && tsc || true",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
