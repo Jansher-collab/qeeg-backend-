@@ -5,7 +5,7 @@ import { prisma } from '@/lib/backend/prisma';
 export async function GET() {
   try {
     const currentFee = await getReportFeeAUD();
-    const settings = await prisma.systemSetting.findMany();
+    const settings = await prisma.systemSettings.findMany();
 
     return NextResponse.json({
       reportFeeAUD: currentFee,

@@ -89,6 +89,10 @@ model QeeqReport {
   findings               Json?
   reportSummary          String?
   reviewerNotes          String?
+  tovaData               Json?
+  checklistData          Json?
+  reviewedBy             String?
+  reviewedAt             DateTime?
   filePaths              String[]      @default([])
   submittingPractitionerId String
   submittingPractitioner User          @relation("SubmittingPractitioner", fields: [submittingPractitionerId], references: [id], onDelete: Cascade)

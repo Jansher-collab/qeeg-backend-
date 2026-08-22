@@ -25,7 +25,7 @@ export interface PaymentCaptureResult {
  */
 export async function getReportFeeAUD(): Promise<number> {
   try {
-    const setting = await prisma.systemSetting.findUnique({
+    const setting = await prisma.systemSettings.findUnique({
       where: { key: SETTING_KEY_FEE },
     });
     if (setting && !isNaN(parseFloat(setting.value))) {
@@ -41,7 +41,7 @@ export async function getReportFeeAUD(): Promise<number> {
  * Updates the admin configurable report fee in system settings.
  */
 export async function setReportFeeAUD(amount: number): Promise<number> {
-  await prisma.systemSetting.upsert({
+  await prisma.systemSettings.upsert({
     where: { key: SETTING_KEY_FEE },
     update: { value: amount.toFixed(2), updatedAt: new Date() },
     create: {
@@ -82,7 +82,7 @@ async function getPayPalAccessToken(): Promise<string> {
     throw new Error(`PayPal OAuth failed: ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data: any = await response.json();
   return data.access_token;
 }
 
@@ -136,7 +136,7 @@ export async function authorisePayment(
       }),
     });
 
-    const orderData = await orderResponse.json();
+    const orderData: any = await orderResponse.json();
 
     if (!orderResponse.ok) {
       return {
@@ -156,7 +156,7 @@ export async function authorisePayment(
       },
     });
 
-    const authData = await authResponse.json();
+    const authData: any = await authResponse.json();
     const authorizationId =
       authData.purchase_units?.[0]?.payments?.authorizations?.[0]?.id || `AUTH-${orderData.id}`;
 
@@ -218,7 +218,7 @@ export async function capturePayment(
       }),
     });
 
-    const captureData = await captureResponse.json();
+    const captureData: any = await captureResponse.json();
 
     return {
       success: captureResponse.ok,

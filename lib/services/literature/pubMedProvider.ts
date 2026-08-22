@@ -14,7 +14,7 @@ export class PubMedProvider implements LiteratureSource {
       const searchRes = await fetch(searchUrl);
       if (!searchRes.ok) return [];
 
-      const searchData = await searchRes.json();
+      const searchData: any = await searchRes.json();
       const idList: string[] = searchData.esearchresult?.idlist || [];
 
       if (idList.length === 0) return [];
@@ -24,7 +24,7 @@ export class PubMedProvider implements LiteratureSource {
       const summaryRes = await fetch(summaryUrl);
       if (!summaryRes.ok) return [];
 
-      const summaryData = await summaryRes.json();
+      const summaryData: any = await summaryRes.json();
       const resultObj = summaryData.result || {};
 
       const results: LiteratureResult[] = idList.map((id) => {

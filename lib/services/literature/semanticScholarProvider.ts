@@ -13,7 +13,7 @@ export class SemanticScholarProvider implements LiteratureSource {
       const response = await fetch(url);
       if (!response.ok) return [];
 
-      const data = await response.json();
+      const data: any = await response.json();
       const papers = data.data || [];
 
       return papers.map(
