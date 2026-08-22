@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // We use a dummy URL for the build phase if the env variable is missing
   url      = env("DATABASE_URL")
 }
 
