@@ -16,5 +16,5 @@
       "@/generated/*": ["./generated/*"]
     }
   },
-  "include": ["lib/**/*", "api/**/*", "generated/**/*", "prisma.config.ts"]
+  "include": ["lib/**/*", "api/**/*", "generated/**/*", "prisma.config.ts", "server.ts"]
 }

@@ -526,7 +526,7 @@ app.post('/api/reports/submit', authenticateUser, async (req: Request, res: Resp
 
 app.post('/api/reports/:id/generate', authenticateUser, async (req: Request, res: Response) => {
   try {
-    const reportId = req.params.id;
+    const reportId = req.params.id as string;
     const report = await prisma.qeeqReport.findUnique({ where: { id: reportId } });
 
     if (!report) {
@@ -619,7 +619,7 @@ app.post('/api/reports/:id/generate', authenticateUser, async (req: Request, res
 
 app.get('/api/reports/:id/download', authenticateUser, async (req: Request, res: Response) => {
   try {
-    const reportId = req.params.id;
+    const reportId = req.params.id as string;
     const report = await prisma.qeeqReport.findUnique({ where: { id: reportId } });
 
     if (!report) {
@@ -656,7 +656,7 @@ app.get('/api/reports/:id/download', authenticateUser, async (req: Request, res:
 // ----------------------------------------------------
 app.get('/api/activity-logs', authenticateUser, async (req: Request, res: Response) => {
   try {
-    const logs = await getActivityLogs(50);
+    const logs = await getActivityLogs({ limit: 50 });
     res.json({ logs });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch logs.' });
@@ -682,7 +682,7 @@ app.get('/api/practitioner/reports', authenticateUser, async (req: Request, res:
   try {
     const user = (req as any).user;
     const reports = await prisma.qeeqReport.findMany({
-      where: { practitionerId: user.id },
+      where: { submittingPractitionerId: user.id },
       orderBy: { createdAt: 'desc' }
     });
     res.json({ reports });
