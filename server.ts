@@ -28,7 +28,7 @@ import { compileCorrelationReport } from './lib/services/correlationEngine';
 import { sendReportReadyNotification } from './lib/services/emailService';
 import { generatePreFilledChecklistPDF } from './lib/services/pdfService';
 import { logActivity, getActivityLogs } from './lib/services/activityLogger';
-import { UserRole } from './generated/prisma/client';
+import { UserRole } from '@prisma/client';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -386,8 +386,7 @@ app.get('/api/checklist/download', async (req: Request, res: Response) => {
         clinicName: prof.clinicName || 'Clinical Practice',
         practiceAddress: prof.practiceAddress || 'Australia',
         phone: prof.phone || '',
-        practiceEmail: prof.practiceEmail || user.email,
-        email: user.email,
+        practiceEmail: user.email,
       };
     }
 

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { prisma } from '../prisma';
-import { UserRole } from '../../generated/prisma/client';
+import { UserRole } from '@prisma/client';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'qeeg-sydney-secure-jwt-secret-2026-production';
 const SESSION_COOKIE_NAME = 'qeeg_session_token';
