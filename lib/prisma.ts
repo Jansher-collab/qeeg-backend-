@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@/generated/prisma/client';
+import { PrismaClient } from '../generated/prisma/client';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -8,11 +8,11 @@ const globalForPrisma = globalThis as unknown as {
 
 const connectionString =
   process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres123@localhost:5432/qeeg_platform?schema=public';
+  'postgresql://neondb_owner:npg_jIoJHU8u7mOp@ep-cold-fire-ayzu0w7y.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require';
 
 const pool = new Pool({
   connectionString,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  ssl: { rejectUnauthorized: false }, // Required for Neon cloud connections
 });
 
 const adapter = new PrismaPg(pool);
