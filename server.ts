@@ -319,6 +319,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 app.get('/api/auth/me', authenticateUser, (req: Request, res: Response) => {
   const user = (req as any).user;
   res.json({
+    authenticated: true,
     user: {
       id: user.id,
       email: user.email,
@@ -660,6 +661,34 @@ app.get('/api/activity-logs', authenticateUser, async (req: Request, res: Respon
     res.json({ logs });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch logs.' });
+  }
+});
+
+// ----------------------------------------------------
+// Practitioner Portal Routes
+// ----------------------------------------------------
+app.get('/api/practitioner/profile', authenticateUser, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const profile = await prisma.practitionerProfile.findUnique({
+      where: { userId: user.id }
+    });
+    res.json({ profile });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch profile' });
+  }
+});
+
+app.get('/api/practitioner/reports', authenticateUser, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const reports = await prisma.qeeqReport.findMany({
+      where: { practitionerId: user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ reports });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to fetch reports' });
   }
 });
 
