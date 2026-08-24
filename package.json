@@ -4,15 +4,15 @@
   "description": "QEEG.com.au backend services, database schema, and processing engine",
   "main": "server.ts",
   "scripts": {
-  "dev": "tsx watch server.ts",
-  "start": "node --import tsx/esm server.ts",
-  "build": "prisma generate",
-  "postinstall": "prisma generate",
-  "prisma:generate": "prisma generate",
-  "prisma:migrate": "prisma migrate dev",
-  "prisma:studio": "prisma studio",
-  "test": "echo \"Running backend tests...\""
-},
+    "dev": "tsx watch server.ts",
+    "start": "node --import tsx/esm server.ts",
+    "build": "prisma generate",
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "test": "echo \"Running backend tests...\""
+  },
   "keywords": [
     "qeeg",
     "backend",
@@ -44,6 +44,7 @@
     "prisma": "^7.9.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "resend": "^6.22.0",
     "tsx": "^4.19.3",
     "zod": "^4.4.3"
   },

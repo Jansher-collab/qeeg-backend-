@@ -25,7 +25,12 @@ import {
   setReportFeeAUD,
 } from './lib/services/paypalService';
 import { compileCorrelationReport } from './lib/services/correlationEngine';
-import { sendReportReadyNotification } from './lib/services/emailService';
+import {
+  sendReportReadyNotification,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendPasswordResetConfirmationEmail,
+} from './lib/services/emailService';
 import { generatePreFilledChecklistPDF } from './lib/services/pdfService';
 import { logActivity, getActivityLogs } from './lib/services/activityLogger';
 import { UserRole } from '@prisma/client';
@@ -219,6 +224,12 @@ app.post('/api/auth/signup', async (req: Request, res: Response) => {
     console.log(`[PostgreSQL DB] 🏥 Profile Linked: ${newUser.practitionerProfile?.fullName || 'N/A'} - ${newUser.practitionerProfile?.clinicName || 'N/A'}`);
     console.log('======================================================\n');
 
+    // Send Welcome Email asynchronously
+    sendWelcomeEmail(
+      newUser.email,
+      newUser.practitionerProfile?.fullName || newUser.email
+    ).catch(e => console.error('Failed to send welcome email:', e));
+
     res.status(201).json({
       message: 'Account created successfully. Please log in.',
       user: {
@@ -332,6 +343,78 @@ app.get('/api/auth/me', authenticateUser, (req: Request, res: Response) => {
 app.post('/api/auth/logout', (req: Request, res: Response) => {
   res.clearCookie(getSessionCookieName(), { path: '/' });
   res.json({ message: 'Logged out successfully.' });
+});
+
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!user) {
+      // Return success even if user not found to prevent email enumeration
+      return res.json({ message: 'If an account exists, a reset link has been sent.' });
+    }
+
+    const token = await createPasswordResetToken(user.email);
+    const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
+    
+    await sendPasswordResetEmail(user.email, resetUrl);
+    
+    res.json({ message: 'If an account exists, a reset link has been sent.' });
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+    }
+
+    const record = await validatePasswordResetToken(token);
+    if (!record) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+
+    await prisma.user.update({
+      where: { email: record.email },
+      data: { passwordHash },
+    });
+
+    await prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { used: true },
+    });
+
+    const user = await prisma.user.findUnique({
+      where: { email: record.email },
+      include: { practitionerProfile: true },
+    });
+
+    if (user) {
+      await sendPasswordResetConfirmationEmail(
+        user.email,
+        user.practitionerProfile?.fullName || user.email
+      ).catch(e => console.error('Failed to send reset confirmation email:', e));
+    }
+
+    res.json({ message: 'Password has been successfully reset.' });
+  } catch (error: any) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 // ----------------------------------------------------
