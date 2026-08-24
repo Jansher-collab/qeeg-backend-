@@ -59,7 +59,7 @@ async function sendNodemailerEmail({
 // Auth Notification Emails
 // ----------------------------------------------------
 
-export async function sendWelcomeEmail(toEmail: string, username: string) {
+export async function sendWelcomeEmail(toEmail: string, username: string, ipAddress: string) {
   const subject = `Welcome to QEEG.com.au, ${username}!`;
   const htmlBody = `
     <!DOCTYPE html>
@@ -83,6 +83,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string) {
           <p>Hi ${username},</p>
           <p>Welcome to the QEEG.com.au Practitioner Portal. We are thrilled to have you on board.</p>
           <p>Your account is fully set up and you can now start securely uploading EEG files for correlation and analysis.</p>
+          <p style="font-size: 13px; color: #64748b;">Registered from IP: ${ipAddress}</p>
           <div style="text-align: center; margin: 30px 0;">
             <a href="${FRONTEND_URL}/portal" class="btn">Go to Dashboard</a>
           </div>
@@ -99,7 +100,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string) {
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Welcome ${username}! You can now access your dashboard at ${FRONTEND_URL}/portal.`,
+    text: `Welcome ${username}! You can now access your dashboard at ${FRONTEND_URL}/portal. Registered from IP: ${ipAddress}`,
   });
 }
 

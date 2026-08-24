@@ -37,6 +37,7 @@ import { logActivity, getActivityLogs } from './lib/services/activityLogger';
 import { UserRole } from '@prisma/client';
 
 const app = express();
+app.set('trust proxy', true);
 const PORT = process.env.PORT || 5000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -228,7 +229,8 @@ app.post('/api/auth/signup', async (req: Request, res: Response) => {
     // Send Welcome Email asynchronously
     sendWelcomeEmail(
       newUser.email,
-      newUser.practitionerProfile?.fullName || newUser.email
+      newUser.practitionerProfile?.fullName || newUser.email,
+      req.ip || '127.0.0.1'
     ).catch(e => console.error('Failed to send welcome email:', e));
 
     res.status(201).json({
