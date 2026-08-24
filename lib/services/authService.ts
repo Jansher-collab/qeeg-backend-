@@ -6,7 +6,7 @@ import { UserRole } from '@prisma/client';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'qeeg-sydney-secure-jwt-secret-2026-production';
 const SESSION_COOKIE_NAME = 'qeeg_session_token';
-const TOKEN_EXPIRY = '7d';
+const TOKEN_EXPIRY = '24h';
 
 export interface TokenPayload {
   userId: string;
@@ -72,7 +72,7 @@ export function getSessionCookieOptions() {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge: 60 * 60 * 24, // 24 hours
   };
 }
 
