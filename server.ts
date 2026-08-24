@@ -30,6 +30,7 @@ import {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendPasswordResetConfirmationEmail,
+  sendLoginAlertEmail,
 } from './lib/services/emailService';
 import { generatePreFilledChecklistPDF } from './lib/services/pdfService';
 import { logActivity, getActivityLogs } from './lib/services/activityLogger';
@@ -311,6 +312,12 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       details: { role: user.role },
       ipAddress: req.ip || '127.0.0.1',
     });
+
+    sendLoginAlertEmail(
+      user.email,
+      user.practitionerProfile?.fullName || user.email,
+      req.ip || '127.0.0.1'
+    ).catch(e => console.error('Failed to send login alert email:', e));
 
     res.json({
       message: 'Logged in successfully.',
