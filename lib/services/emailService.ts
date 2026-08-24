@@ -6,6 +6,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 // Ensure data sovereignty by binding strictly to AWS Sydney Region (ap-southeast-2)
 const AWS_REGION = process.env.AWS_REGION || 'ap-southeast-2';
 const FROM_EMAIL = process.env.SES_FROM_EMAIL || 'reports@qeeg.com.au';
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://qeeg.com.au';
 
 let sesClient: SESClient | null = null;
@@ -185,7 +186,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string) {
 
   try {
     const data = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: RESEND_FROM_EMAIL,
       to: toEmail,
       subject,
       html: htmlBody,
@@ -239,7 +240,7 @@ export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) 
 
   try {
     const data = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: RESEND_FROM_EMAIL,
       to: toEmail,
       subject,
       html: htmlBody,
@@ -298,7 +299,7 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
 
   try {
     const data = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: RESEND_FROM_EMAIL,
       to: toEmail,
       subject,
       html: htmlBody,
