@@ -8,6 +8,7 @@ const AWS_REGION = process.env.AWS_REGION || 'ap-southeast-2';
 const FROM_EMAIL = process.env.SES_FROM_EMAIL || 'reports@qeeg.com.au';
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://qeeg.com.au';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 let sesClient: SESClient | null = null;
 
@@ -168,7 +169,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string) {
           <p>Welcome to the QEEG.com.au Practitioner Portal. We are thrilled to have you on board.</p>
           <p>Your account is fully set up and you can now start securely uploading EEG files for correlation and analysis.</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${APP_BASE_URL}/portal" class="btn">Go to Dashboard</a>
+            <a href="${FRONTEND_URL}/portal" class="btn">Go to Dashboard</a>
           </div>
           <p>If you have any questions, feel free to reply directly to this email.</p>
           <div class="footer">
@@ -281,7 +282,7 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
           <p>This is a confirmation that the password for your QEEG.com.au account was successfully updated.</p>
           <p>If you made this change, no further action is required. You can log in to your account with your new credentials.</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${APP_BASE_URL}/login" class="btn">Go to Login</a>
+            <a href="${FRONTEND_URL}/login" class="btn">Go to Login</a>
           </div>
           <p style="font-size: 13px; color: #64748b;">If you did not make this change, please immediately reply to this email to secure your account.</p>
           <div class="footer">
