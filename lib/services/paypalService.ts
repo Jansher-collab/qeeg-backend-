@@ -58,13 +58,13 @@ export async function setReportFeeAUD(amount: number): Promise<number> {
  */
 async function getPayPalAccessToken(): Promise<string> {
   const clientId = process.env.PAYPAL_CLIENT_ID;
-  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+  const clientSecret = process.env.PAYPAL_SECRET;
   const mode = process.env.PAYPAL_MODE || 'sandbox';
   const baseUrl = mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
 
   if (!clientId || !clientSecret) {
     // If credentials are not set, return mock token for local testing
-    console.warn('PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET not configured. Using sandbox mock mode.');
+    console.warn('PAYPAL_CLIENT_ID or PAYPAL_SECRET not configured. Using sandbox mock mode.');
     return 'MOCK_PAYPAL_ACCESS_TOKEN';
   }
 

@@ -562,19 +562,23 @@ app.post('/api/reports/submit', authenticateUser, async (req: Request, res: Resp
     const user = (req as any).user;
     const payload = req.body;
 
-    // 1. Server-Side Reliability & De-Identification Quality Gate
+    // 1. Authorise PayPal Payment Hold ($65 AUD)
+    const reportFee = await getReportFeeAUD();
+    const authResult = await authorisePayment(payload.caseReference, reportFee);
+
+    // 2. Server-Side Reliability & De-Identification Quality Gate
     const verification = verifyIngestionPayload(payload);
     if (!verification.passed) {
+      // Trigger PayPal void/release if reliability gate fails
+      if (authResult.authorizationId) {
+        await voidPayment(authResult.authorizationId);
+      }
       return res.status(400).json({
         error: verification.rejectionReason || 'Reliability score below mandatory 0.80 threshold.',
         reliabilityScore: verification.reliabilityScore,
         threshold: 0.80,
       });
     }
-
-    // 2. Authorise PayPal Payment Hold ($65 AUD)
-    const reportFee = await getReportFeeAUD();
-    const authResult = await authorisePayment(payload.caseReference, reportFee);
 
     // 3. Create Report in Database
     const newReport = await prisma.qeeqReport.create({
