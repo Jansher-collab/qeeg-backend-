@@ -1,17 +1,26 @@
 import { LiteratureResult, LiteratureSource } from './literatureSource';
+import { fetchWithTimeout } from '../timeout';
 
 export class PubMedProvider implements LiteratureSource {
   name: 'PubMed' = 'PubMed';
   private baseUrl = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
+
+  // NCBI E-utilities accept the API key as a query parameter; when set it
+  // raises the rate limit from 3 to ~10 requests/sec.
+  private get apiKeyParam(): string {
+    return process.env.NCBI_API_KEY
+      ? `&api_key=${encodeURIComponent(process.env.NCBI_API_KEY)}`
+      : '';
+  }
 
   async searchLiterature(query: string, limit = 5): Promise<LiteratureResult[]> {
     try {
       // Step 1: E-search to get PubMed IDs
       const searchUrl = `${this.baseUrl}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(
         query
-      )}&retmode=json&retmax=${limit}`;
+      )}&retmode=json&retmax=${limit}${this.apiKeyParam}`;
 
-      const searchRes = await fetch(searchUrl);
+      const searchRes = await fetchWithTimeout(searchUrl);
       if (!searchRes.ok) return [];
 
       const searchData: any = await searchRes.json();
@@ -20,8 +29,8 @@ export class PubMedProvider implements LiteratureSource {
       if (idList.length === 0) return [];
 
       // Step 2: E-summary to get metadata for PubMed IDs
-      const summaryUrl = `${this.baseUrl}/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json`;
-      const summaryRes = await fetch(summaryUrl);
+      const summaryUrl = `${this.baseUrl}/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json${this.apiKeyParam}`;
+      const summaryRes = await fetchWithTimeout(summaryUrl);
       if (!summaryRes.ok) return [];
 
       const summaryData: any = await summaryRes.json();

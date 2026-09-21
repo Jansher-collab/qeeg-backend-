@@ -1,0 +1,335 @@
+{
+  "version": 1,
+  "description": "QEEG.com.au Clinical Symptom Checklist definition (Sections 3.1, 3.2, 4.3). The complete live HTML form and PDF generator are driven by this file: every section and field listed below is rendered from the first section to the last. Do not change a domain 'key' once reports exist.",
+  "likert": {
+    "0": "Absent",
+    "1": "Mild",
+    "2": "Mod",
+    "3": "Marked",
+    "4": "Severe"
+  },
+  "domains": [
+    {
+      "num": 1,
+      "key": "domain_1",
+      "page": 2,
+      "title": "1. Inattention",
+      "desc": "Sustained focus deficit, distractibility, carelessness, task persistence failure"
+    },
+    {
+      "num": 2,
+      "key": "domain_2",
+      "page": 2,
+      "title": "2. Hyperactivity / Impulsivity",
+      "desc": "Motor restlessness, impulse delay failure, verbal interruption, psychomotor agitation"
+    },
+    {
+      "num": 3,
+      "key": "domain_3",
+      "page": 2,
+      "title": "3. Anxiety",
+      "desc": "Generalized worry, autonomic hyperarousal, panic episodes, somatic muscle tension"
+    },
+    {
+      "num": 4,
+      "key": "domain_4",
+      "page": 2,
+      "title": "4. Mood / Depression",
+      "desc": "Persistent low mood, anhedonia, emotional lability, motivational withdrawal"
+    },
+    {
+      "num": 5,
+      "key": "domain_5",
+      "page": 2,
+      "title": "5. Rumination",
+      "desc": "Repetitive negative thinking, cognitive hyper-fixation, perseveration, intrusive thoughts"
+    },
+    {
+      "num": 6,
+      "key": "domain_6",
+      "page": 3,
+      "title": "6. Emotional Regulation",
+      "desc": "Affective volatility, low frustration tolerance, explosive dysregulation, mood reactivity"
+    },
+    {
+      "num": 7,
+      "key": "domain_7",
+      "page": 3,
+      "title": "7. Sleep Difficulties",
+      "desc": "Sleep onset latency > 45m, frequent nocturnal waking, non-restorative sleep, diurnal fatigue"
+    },
+    {
+      "num": 8,
+      "key": "domain_8",
+      "page": 3,
+      "title": "8. Executive Function / Organisation",
+      "desc": "Working memory deficit, mental flexibility, sequencing slowing, planning friction"
+    },
+    {
+      "num": 9,
+      "key": "domain_9",
+      "page": 3,
+      "title": "9. Oppositional / Behavioural Difficulties",
+      "desc": "Defiance, rule-testing, reactivity, behavioral impulse control deficit, conduct friction"
+    },
+    {
+      "num": 10,
+      "key": "domain_10",
+      "page": 3,
+      "title": "10. Social Difficulties",
+      "desc": "Pragmatic language friction, social cue interpretation delay, interpersonal withdrawal"
+    },
+    {
+      "num": 11,
+      "key": "domain_11",
+      "page": 3,
+      "title": "11. Sensory Processing",
+      "desc": "Auditory / visual / tactile hypersensitivity, photophobia, sensory overload gating delay"
+    }
+  ],
+  "sections": [
+    {
+      "key": "referring_practitioner",
+      "title": "1. Referring Practitioner Details (authenticated pre-fill)",
+      "kind": "fields",
+      "readonly": true,
+      "required": true,
+      "fields": [
+        {
+          "key": "practitioner_full_name",
+          "label": "Practitioner Full Name *",
+          "type": "text",
+          "required": true,
+          "source": "profile.fullName"
+        },
+        {
+          "key": "practitioner_email",
+          "label": "Login & Notification Email *",
+          "type": "text",
+          "required": true,
+          "source": "profile.notificationEmail"
+        },
+        {
+          "key": "professional_title",
+          "label": "Professional Title / Credentials *",
+          "type": "text",
+          "required": true,
+          "source": "profile.professionalTitle"
+        },
+        {
+          "key": "profession",
+          "label": "Profession / Registration Type *",
+          "type": "text",
+          "required": true,
+          "source": "profile.profession"
+        },
+        {
+          "key": "provider_number",
+          "label": "Registration / Provider Number *",
+          "type": "text",
+          "required": true,
+          "source": "profile.providerNumber"
+        },
+        {
+          "key": "clinic_name",
+          "label": "Practice / Clinic Name *",
+          "type": "text",
+          "required": true,
+          "source": "profile.clinicName"
+        },
+        {
+          "key": "phone",
+          "label": "Practice Contact Phone *",
+          "type": "text",
+          "required": true,
+          "source": "profile.phone"
+        },
+        {
+          "key": "practice_address",
+          "label": "Practice Address *",
+          "type": "text",
+          "required": true,
+          "source": "profile.practiceAddress"
+        }
+      ]
+    },
+    {
+      "key": "case_reference_demographics",
+      "title": "2. Case Reference & Client Demographics (zero-PII policy)",
+      "kind": "fields",
+      "required": true,
+      "insight": "Do NOT enter patient full names or birthdates. Use Case Reference and Age/Gender metrics only.",
+      "fields": [
+        {
+          "key": "case_reference",
+          "label": "Case Reference (populated at reliability gate) *",
+          "type": "text",
+          "required": true,
+          "readonly": true,
+          "source": "case.reference"
+        },
+        {
+          "key": "age",
+          "label": "Client Age (Years) *",
+          "type": "text",
+          "required": true,
+          "source": "case.age"
+        },
+        {
+          "key": "gender",
+          "label": "Biological Gender *",
+          "type": "select",
+          "required": true,
+          "source": "case.gender",
+          "options": [
+            { "value": "MALE", "label": "Male" },
+            { "value": "FEMALE", "label": "Female" },
+            { "value": "OTHER", "label": "Other / Intersex" }
+          ]
+        },
+        {
+          "key": "handedness",
+          "label": "Dominant Handedness",
+          "type": "select",
+          "required": false,
+          "source": "case.handedness",
+          "options": [
+            { "value": "RIGHT", "label": "Right" },
+            { "value": "LEFT", "label": "Left" },
+            { "value": "AMBIDEXTROUS", "label": "Ambidextrous" }
+          ]
+        },
+        {
+          "key": "recording_condition",
+          "label": "QEEG Recording Condition *",
+          "type": "select",
+          "required": true,
+          "options": [
+            { "value": "EC", "label": "Eyes Closed (EC)" },
+            { "value": "EO", "label": "Eyes Open (EO)" },
+            { "value": "TOVA", "label": "Continuous Task (TOVA)" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "recording_quality",
+      "title": "3. QEEG Recording Quality & Artifact Declaration",
+      "kind": "fields",
+      "required": false,
+      "fields": [
+        {
+          "key": "quality_1",
+          "label": "10-20 System Placement Verification",
+          "detail": "Standard 19-channel electrode placement verified.",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "key": "quality_2",
+          "label": "Client Cooperation & Protocol Compliance",
+          "detail": "Client maintained quiet wakefulness during recording.",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "key": "quality_3",
+          "label": "Artifact Control & Filter",
+          "detail": "Ocular blinks, EMG muscle tension removed; Test/Retest reliability >= 0.80.",
+          "type": "checkbox",
+          "required": false
+        },
+        {
+          "key": "quality_4",
+          "label": "Medication & Neuromodulator Status Disclosed",
+          "detail": "Psychoactive medications recorded in observations.",
+          "type": "checkbox",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "domains_page_2",
+      "title": "4. Clinical Symptom Domains (1 of 2: Domains 1 - 5)",
+      "kind": "domains",
+      "domainPage": 2,
+      "required": true
+    },
+    {
+      "key": "domains_page_3",
+      "title": "5. Clinical Symptom Domains (2 of 2: Domains 6 - 11)",
+      "kind": "domains",
+      "domainPage": 3,
+      "required": true
+    },
+    {
+      "key": "clinical_notes",
+      "title": "6. Additional Clinical Notes & Medications (optional)",
+      "kind": "fields",
+      "required": false,
+      "fields": [
+        {
+          "key": "additional_notes",
+          "label": "Record psychoactive medications, previous neurofeedback protocols, or relevant clinical observations:",
+          "type": "textarea",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "ai_notice",
+      "title": "7. Clinical Decision Support & Automated Synthesis Notice",
+      "kind": "static",
+      "lines": [
+        "EXPLICIT MEDICAL & AI SYNTHESIS DISCLAIMER:",
+        "• QEEG.com.au correlation reports are automated, evidence-linked literature synthesis documents mapping QEEG spectral power deviations against peer-reviewed neuroimaging literature.",
+        "• These reports DO NOT constitute human-reviewed medical advice, psychiatric diagnosis, or treatment prescriptions.",
+        "• The referring practitioner retains sole clinical responsibility for patient assessment, protocol selection, and medical diagnostic decisions under Australian healthcare regulations."
+      ]
+    },
+    {
+      "key": "agreement_payment",
+      "title": "8. Statutory Service Agreement & Payment Authorisation",
+      "kind": "fields",
+      "required": true,
+      "fields": [
+        {
+          "key": "service_agreement_ack",
+          "label": "Statutory Service Agreement Acknowledgement *",
+          "detail": "I confirm acceptance of QEEG.com.au Terms of Service, Zero-PII data retention policy, and Sydney sovereign server infrastructure compliance under the Australian Privacy Act 1988.",
+          "type": "checkbox",
+          "required": true
+        },
+        {
+          "key": "payment_auth_ack",
+          "label": "PayPal $65.00 AUD Fee Authorisation Hold *",
+          "detail": "I authorize a $65.00 AUD fee hold per report submission via PayPal. Funds are captured strictly upon successful generation and verification.",
+          "type": "checkbox",
+          "required": true
+        }
+      ]
+    },
+    {
+      "key": "signoff",
+      "title": "9. Referring Practitioner Sign-off",
+      "kind": "fields",
+      "required": true,
+      "insight": "Typed practitioner signature and sign-off date are legally binding under the Electronic Transactions Act 1999.",
+      "fields": [
+        {
+          "key": "signature",
+          "label": "Practitioner Digital Signature (Typed Name) *",
+          "type": "text",
+          "required": true,
+          "placeholder": "Type your full name to sign"
+        },
+        {
+          "key": "date_signed",
+          "label": "Date Signed (DD/MM/YYYY) *",
+          "type": "date",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { getChecklistDomainsForPage, getLikertLabel } from './checklistDefinition';
 
 export interface PractitionerChecklistDetails {
   fullName: string;
@@ -327,25 +328,23 @@ export async function generatePreFilledChecklistPDF(
     color: darkNavy,
   });
 
-  // Quality Checkboxes quality_1 to quality_4
+  // Quality Checkboxes quality_1 to quality_4 (optional: any combination may be
+  // declared on the checklist; not forced by the PDF).
+
   const q1 = form.createCheckBox('quality_1');
   q1.addToPage(page2, { x: 48, y: p2Y - 42, width: 12, height: 12 });
-  q1.enableRequired();
   page2.drawText('1. 10-20 System Placement Verification: Standard 19-channel electrode placement verified.', { x: 66, y: p2Y - 40, size: 7.5, font: fontBold, color: slateText });
 
   const q2 = form.createCheckBox('quality_2');
   q2.addToPage(page2, { x: 48, y: p2Y - 66, width: 12, height: 12 });
-  q2.enableRequired();
   page2.drawText('2. Client Cooperation & Protocol Compliance: Client maintained quiet wakefulness during recording.', { x: 66, y: p2Y - 64, size: 7.5, font: fontBold, color: slateText });
 
   const q3 = form.createCheckBox('quality_3');
   q3.addToPage(page2, { x: 48, y: p2Y - 90, width: 12, height: 12 });
-  q3.enableRequired();
   page2.drawText('3. Artifact Control & Filter: Ocular blinks, EMG muscle tension removed; Test/Retest reliability >= 0.80.', { x: 66, y: p2Y - 88, size: 7.5, font: fontBold, color: slateText });
 
   const q4 = form.createCheckBox('quality_4');
   q4.addToPage(page2, { x: 48, y: p2Y - 114, width: 12, height: 12 });
-  q4.enableRequired();
   page2.drawText('4. Medication & Neuromodulator Status Disclosed: Psychoactive medications recorded in observations.', { x: 66, y: p2Y - 112, size: 7.5, font: fontBold, color: slateText });
 
   // CARD 2: Symptom Domains 1 to 5
@@ -376,38 +375,9 @@ export async function generatePreFilledChecklistPDF(
     color: slateLabel,
   });
 
-  const domainsPage2 = [
-    {
-      num: 1,
-      key: 'domain_1',
-      title: '1. Inattention',
-      desc: 'Sustained focus deficit, distractibility, carelessness, task persistence failure',
-    },
-    {
-      num: 2,
-      key: 'domain_2',
-      title: '2. Hyperactivity / Impulsivity',
-      desc: 'Motor restlessness, impulse delay failure, verbal interruption, psychomotor agitation',
-    },
-    {
-      num: 3,
-      key: 'domain_3',
-      title: '3. Anxiety',
-      desc: 'Generalized worry, autonomic hyperarousal, panic episodes, somatic muscle tension',
-    },
-    {
-      num: 4,
-      key: 'domain_4',
-      title: '4. Mood / Depression',
-      desc: 'Persistent low mood, anhedonia, emotional lability, motivational withdrawal',
-    },
-    {
-      num: 5,
-      key: 'domain_5',
-      title: '5. Rumination',
-      desc: 'Repetitive negative thinking, cognitive hyper-fixation, perseveration, intrusive thoughts',
-    },
-  ];
+  // Domain ratings are sourced from config/checklist-definition.json so the
+  // clinical checklist remains editable without code changes.
+  const domainsPage2 = getChecklistDomainsForPage(2);
 
   let domY = p2Y - 48;
   for (const d of domainsPage2) {
@@ -433,7 +403,7 @@ export async function generatePreFilledChecklistPDF(
       const xOffset = 180 + rating * 72;
       cb.addToPage(page2, { x: xOffset, y: domY - 56, width: 12, height: 12 });
       
-      const labelText = `${rating} - ${['Absent', 'Mild', 'Mod', 'Marked', 'Severe'][rating]}`;
+      const labelText = `${rating} - ${getLikertLabel(rating)}`;
       page2.drawText(labelText, { x: xOffset + 16, y: domY - 54, size: 7.5, font: fontRegular, color: slateText });
     }
 
@@ -489,44 +459,7 @@ export async function generatePreFilledChecklistPDF(
     color: slateLabel,
   });
 
-  const domainsPage3 = [
-    {
-      num: 6,
-      key: 'domain_6',
-      title: '6. Emotional Regulation',
-      desc: 'Affective volatility, low frustration tolerance, explosive dysregulation, mood reactivity',
-    },
-    {
-      num: 7,
-      key: 'domain_7',
-      title: '7. Sleep Difficulties',
-      desc: 'Sleep onset latency > 45m, frequent nocturnal waking, non-restorative sleep, diurnal fatigue',
-    },
-    {
-      num: 8,
-      key: 'domain_8',
-      title: '8. Executive Function / Organisation',
-      desc: 'Working memory deficit, mental flexibility, sequencing slowing, planning friction',
-    },
-    {
-      num: 9,
-      key: 'domain_9',
-      title: '9. Oppositional / Behavioural Difficulties',
-      desc: 'Defiance, rule-testing, reactivity, behavioral impulse control deficit, conduct friction',
-    },
-    {
-      num: 10,
-      key: 'domain_10',
-      title: '10. Social Difficulties',
-      desc: 'Pragmatic language friction, social cue interpretation delay, interpersonal withdrawal',
-    },
-    {
-      num: 11,
-      key: 'domain_11',
-      title: '11. Sensory Processing',
-      desc: 'Auditory / visual / tactile hypersensitivity, photophobia, sensory overload gating delay',
-    },
-  ];
+  const domainsPage3 = getChecklistDomainsForPage(3);
 
   let domY3 = p3Y - 48;
   for (const d of domainsPage3) {
@@ -551,7 +484,7 @@ export async function generatePreFilledChecklistPDF(
       const xOffset = 180 + rating * 72;
       cb.addToPage(page3, { x: xOffset, y: domY3 - 52, width: 12, height: 12 });
       
-      const labelText = `${rating} - ${['Absent', 'Mild', 'Mod', 'Marked', 'Severe'][rating]}`;
+      const labelText = `${rating} - ${getLikertLabel(rating)}`;
       page3.drawText(labelText, { x: xOffset + 16, y: domY3 - 50, size: 7.5, font: fontRegular, color: slateText });
     }
 

@@ -1,12 +1,15 @@
 import { LiteratureResult, LiteratureSource } from './literatureSource';
 import { PubMedProvider } from './pubMedProvider';
 import { SemanticScholarProvider } from './semanticScholarProvider';
+import { CuratedLiteratureProvider } from './curatedLiteratureProvider';
 
 export class AggregatedLiteratureService {
   private sources: LiteratureSource[];
 
   constructor() {
-    this.sources = [new PubMedProvider(), new SemanticScholarProvider()];
+    // Curated Knowledge Base entries are matched first so an admin-curated
+    // reference an identical title trumps the external provider result.
+    this.sources = [new CuratedLiteratureProvider(), new PubMedProvider(), new SemanticScholarProvider()];
   }
 
   async searchLiterature(query: string, limitPerSource = 5): Promise<LiteratureResult[]> {

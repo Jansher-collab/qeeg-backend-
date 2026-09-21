@@ -6,12 +6,12 @@ export interface LiteratureResult {
   year?: number;
   abstract?: string;
   url: string;
-  source: 'PubMed' | 'SemanticScholar';
+  source: string;
   doi?: string;
   relevanceScore?: number;
 }
 
 export interface LiteratureSource {
-  name: 'PubMed' | 'SemanticScholar';
+  name: string;
   searchLiterature(query: string, limit?: number): Promise<LiteratureResult[]>;
 }

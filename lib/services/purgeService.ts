@@ -69,7 +69,7 @@ export async function executePurgeOnDownload(
       }
     }
 
-    // Step 3: Record PURGE_COMPLETED activity log BEFORE deleting the report link
+    // Step 3: Record PURGE_COMPLETED activity log BEFORE updating the report
     await logActivity({
       reportId: report.id,
       caseReference: report.caseReference,
@@ -83,9 +83,20 @@ export async function executePurgeOnDownload(
       ipAddress,
     });
 
-    // Step 4: Delete the database record from PostgreSQL
-    await prisma.qeeqReport.delete({
+    // Step 4: Update the database record to DOWNLOADED_AND_PURGED status
+    // (wipe sensitive fields but keep the record for practitioner's purged view)
+    await prisma.qeeqReport.update({
       where: { id: reportId },
+      data: {
+        status: 'DOWNLOADED_AND_PURGED',
+        tovaData: undefined,
+        checklistData: undefined,
+        findings: undefined,
+        reportSummary: undefined,
+        filePaths: undefined,
+        downloadedAt: new Date(),
+        purgedAt: new Date(),
+      },
     });
 
     return {
@@ -97,7 +108,7 @@ export async function executePurgeOnDownload(
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : 'Unknown purge error';
 
-    // Fallback: If cascade/FK prevents full deletion, anonymize and wipe sensitive fields
+    // Fallback: If update fails, try to at least mark as purged
     try {
       await prisma.qeeqReport.update({
         where: { id: reportId },

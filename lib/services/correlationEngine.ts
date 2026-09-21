@@ -1,5 +1,6 @@
 import { aggregatedLiteratureService } from './literature/aggregatedLiteratureService';
 import { LiteratureResult } from './literature/literatureSource';
+import { queryKnowledgeBase, KnowledgeBaseAnswer } from './knowledgeBaseService';
 
 export interface DomainFinding {
   domain: 'Medical' | 'Psychological' | 'Nutritional' | 'Lifestyle' | 'Neurofeedback Treatment-Response';
@@ -13,6 +14,7 @@ export interface DomainFinding {
 export interface CompiledReportFindings {
   caseReference: string;
   confidenceScore: number;
+  reliabilityScore: number;
   overallSummary: string;
   demographics?: {
     age?: number;
@@ -21,6 +23,7 @@ export interface CompiledReportFindings {
   };
   domains: DomainFinding[];
   aiDisclaimer: string;
+  knowledgeBase?: KnowledgeBaseAnswer;
   compiledAt: string;
 }
 
@@ -137,6 +140,21 @@ export async function compileCorrelationReport(
     literatureCitations: nfbLit.length > 0 ? nfbLit : literatureResults.slice(0, 2),
   };
 
+  // Knowledge-base grounding (retrieval-augmented, never hallucinated): the
+  // platform's own ingested knowledge base is queried and the result attached
+  // to the report so every statement is traceable to a source chunk. A KB
+  // failure is degraded gracefully — it must never fail the generation job.
+  let knowledgeBaseAnswer: KnowledgeBaseAnswer | undefined;
+  try {
+    const kbQuestion =
+      keywords.length > 0
+        ? `Relevance of the following clinical presentation to QEEG-guided neurofeedback: ${keywords.join(', ')}.`
+        : 'Clinical correlates of QEEG metrics and neurofeedback treatment planning.';
+    knowledgeBaseAnswer = await queryKnowledgeBase(kbQuestion);
+  } catch (e) {
+    console.warn('[CorrelationEngine] Knowledge-base query failed, continuing without it.', e);
+  }
+
   // Calculate overall Confidence Score (based on reliability score, literature density, and indicator agreement)
   const baseConfidence = (reliabilityScore ?? 0.85) * 0.7;
   const citationBonus = Math.min((medicalLit.length + psychLit.length + nfbLit.length) * 0.05, 0.25);
@@ -145,6 +163,7 @@ export async function compileCorrelationReport(
   return {
     caseReference,
     confidenceScore,
+    reliabilityScore: reliabilityScore ?? 0.85,
     overallSummary: `QEEG correlation analysis completed for case ${caseReference}. Findings mapped across 5 clinical domains with validated peer-reviewed literature citations.`,
     demographics: {
       age,
@@ -159,8 +178,24 @@ export async function compileCorrelationReport(
       neurofeedbackDomain,
     ],
     aiDisclaimer: MANDATORY_AI_GENERATION_DISCLAIMER,
+    knowledgeBase: knowledgeBaseAnswer,
     compiledAt: new Date().toISOString(),
   };
+}
+
+function chooseChecklistDomainKeys(
+  checklistData?: Record<string, unknown>
+): { key: string; score: number }[] {
+  const domains = checklistData?.domains;
+  if (Array.isArray(domains)) {
+    return domains
+      .filter(
+        (d): d is { key: string; score: number } =>
+          !!d && typeof d === 'object' && typeof (d as any).key === 'string' && typeof (d as any).score === 'number'
+      )
+      .map((d) => ({ key: d.key, score: d.score }));
+  }
+  return [];
 }
 
 function extractClinicalKeywords(
@@ -169,6 +204,19 @@ function extractClinicalKeywords(
 ): string[] {
   const keywords: string[] = [];
   if (tovaData?.adhdScore !== undefined) keywords.push('ADHD attention executive function');
+  if (tovaData?.dPrime !== undefined) keywords.push('TOVA sustained attention d-prime');
+
+  // New config-driven checklist: each domain carries a 0-4 Likert score.
+  const domainScores = chooseChecklistDomainKeys(checklistData);
+  const scoreOf = (key: string) => domainScores.find((d) => d.key === key)?.score ?? 0;
+  if (scoreOf('domain_1') >= 3) keywords.push('inattention distractibility');
+  if (scoreOf('domain_2') >= 3) keywords.push('hyperactivity impulsivity');
+  if (scoreOf('domain_3') >= 3) keywords.push('anxiety beta asymmetry');
+  if (scoreOf('domain_4') >= 3) keywords.push('depression mood affective');
+  if (scoreOf('domain_7') >= 3) keywords.push('sleep latency alpha slowing');
+  if (scoreOf('domain_8') >= 3) keywords.push('executive function working memory');
+
+  // Legacy object shape (boolean flags) preserved for backward compatibility.
   if (checklistData?.anxiety === true) keywords.push('anxiety beta asymmetry');
   if (checklistData?.sleepIssue === true) keywords.push('sleep latency alpha slowing');
   return keywords;

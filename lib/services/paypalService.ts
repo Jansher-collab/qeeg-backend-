@@ -1,7 +1,129 @@
 import { prisma } from '../prisma';
+import { fetchWithTimeout } from './timeout';
 
 const DEFAULT_REPORT_FEE_AUD = 65.0;
 const SETTING_KEY_FEE = 'REPORT_FEE_AUD';
+
+const isProduction = process.env.NODE_ENV === 'production';
+
+export type PayPalMode = 'live' | 'sandbox';
+
+// Normalise the PAYPAL_MODE switch: 'live' or 'production' both mean the live
+// REST endpoint; anything else (including unset) resolves to sandbox.
+export function getPayPalMode(): PayPalMode {
+  const mode = (process.env.PAYPAL_MODE || 'sandbox').toLowerCase();
+  return mode === 'live' || mode === 'production' ? 'live' : 'sandbox';
+}
+
+/**
+ * Resolves the PayPal credentials for the active mode without touching the
+ * other mode's variables:
+ *  - Live mode  — always the production PAYPAL_CLIENT_ID / PAYPAL_SECRET.
+ *  - Sandbox    — prefers PAYPAL_SANDBOX_CLIENT_ID / PAYPAL_SANDBOX_SECRET,
+ *                 falling back to the base PAYPAL_* pair when only one set
+ *                 has been configured (safe: a live pair against the sandbox
+ *                 endpoint is rejected by PayPal and never captures funds).
+ */
+export function getPayPalCredentials(): { clientId?: string; clientSecret?: string } {
+  if (getPayPalMode() === 'live') {
+    return {
+      clientId: process.env.PAYPAL_CLIENT_ID,
+      clientSecret: process.env.PAYPAL_SECRET,
+    };
+  }
+  return {
+    clientId: process.env.PAYPAL_SANDBOX_CLIENT_ID || process.env.PAYPAL_CLIENT_ID,
+    clientSecret: process.env.PAYPAL_SANDBOX_SECRET || process.env.PAYPAL_SECRET,
+  };
+}
+
+export function isPayPalConfigured(): boolean {
+  const { clientId, clientSecret } = getPayPalCredentials();
+  return Boolean(clientId && clientSecret);
+}
+
+function payPalBaseUrl(): string {
+  return getPayPalMode() === 'live'
+    ? 'https://api-m.paypal.com'
+    : 'https://api-m.sandbox.paypal.com';
+}
+
+/**
+ * In production, a missing PayPal configuration is a hard failure: mock
+ * authorisations/captures/voids silently succeed and would report payments
+ * that never happened. Guard every mock path with this check. Production must
+ * run in live mode with the production credentials set.
+ */
+function assertPayPalConfigured(reason: string): void {
+  if (!isProduction) return;
+  if (getPayPalMode() !== 'live') {
+    throw new Error(
+      `PayPal is configured for sandbox mode in a production environment — ${reason}. Set PAYPAL_MODE=live and the production PAYPAL_CLIENT_ID/PAYPAL_SECRET before going live.`
+    );
+  }
+  if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_SECRET) {
+    throw new Error(
+      `PayPal is not configured for production (PAYPAL_CLIENT_ID/PAYPAL_SECRET missing) — ${reason}. Set PAYPAL_MODE=live and both production credentials before going live.`
+    );
+  }
+}
+
+/**
+ * Formats an amount as the strict two-decimal string PayPal's Orders v2 API
+ * requires (e.g. 65 -> "65.00"). The `value` field must be a string, never a
+ * bare number or scientific notation, or PayPal rejects it with a 422
+ * BUSINESS_ERROR / value-not-valid validation error.
+ */
+function formatAmountToTwoDecimals(amount: number): string {
+  return Number(amount).toFixed(2);
+}
+
+/**
+ * Logs a failed PayPal API response in full — including the nested `details`
+ * array and `debug_id` — so 422 business validation errors can be diagnosed.
+ */
+function logPayPalFailure(operation: string, status: number, payload: any): void {
+  console.error(
+    `[paypalService] ${operation} failed (HTTP ${status})`,
+    JSON.stringify(
+      {
+        name: payload?.name ?? null,
+        message: payload?.message ?? null,
+        details: Array.isArray(payload?.details) ? payload.details : null,
+        debug_id: payload?.debug_id ?? null,
+        links: payload?.links ?? null,
+      },
+      null,
+      2
+    )
+  );
+}
+
+/**
+ * Builds a readable, diagnosable error string from PayPal's error payload.
+ * Surfaces the top-level `message`, every `details[].description`, and the
+ * `debug_id` for tracing the exact business validation issue.
+ */
+function buildPayPalErrorText(payload: any, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+
+  const detailText = Array.isArray(payload.details)
+    ? payload.details
+        .map((d: any) => {
+          if (!d) return '';
+          const issueLabel = d.issue ? `${d.issue}: ` : '';
+          return d.description
+            ? `${issueLabel}${d.description}`
+            : JSON.stringify(d);
+        })
+        .filter(Boolean)
+        .join('; ')
+    : '';
+
+  const debugText = payload.debug_id ? ` [debug_id=${payload.debug_id}]` : '';
+
+  return [payload.message, detailText].filter(Boolean).join(' — ') + debugText || fallback;
+}
 
 export interface PaymentAuthorisationResult {
   success: boolean;
@@ -57,19 +179,18 @@ export async function setReportFeeAUD(amount: number): Promise<number> {
  * Obtains an OAuth 2.0 Access Token from PayPal REST API.
  */
 async function getPayPalAccessToken(): Promise<string> {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-  const clientSecret = process.env.PAYPAL_SECRET;
-  const mode = process.env.PAYPAL_MODE || 'sandbox';
-  const baseUrl = mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+  const { clientId, clientSecret } = getPayPalCredentials();
+  const baseUrl = payPalBaseUrl();
 
   if (!clientId || !clientSecret) {
-    // If credentials are not set, return mock token for local testing
-    console.warn('PAYPAL_CLIENT_ID or PAYPAL_SECRET not configured. Using sandbox mock mode.');
+    assertPayPalConfigured('unable to obtain an access token');
+    // Development fallback only — never reached in production.
+    console.warn(`PayPal credentials not configured for ${getPayPalMode()} mode. Using mock token.`);
     return 'MOCK_PAYPAL_ACCESS_TOKEN';
   }
 
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const response = await fetch(`${baseUrl}/v1/oauth2/token`, {
+  const response = await fetchWithTimeout(`${baseUrl}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth}`,
@@ -95,10 +216,10 @@ export async function authorisePayment(
   amountAUD?: number
 ): Promise<PaymentAuthorisationResult> {
   const fee = amountAUD ?? (await getReportFeeAUD());
-  const clientId = process.env.PAYPAL_CLIENT_ID;
 
-  if (!clientId) {
-    // Mock authorization mode for testing environments
+  if (!isPayPalConfigured()) {
+    assertPayPalConfigured('payment authorisation');
+    // Mock authorization mode — development only.
     const mockAuthId = `AUTH-MOCK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     return {
       success: true,
@@ -111,11 +232,10 @@ export async function authorisePayment(
 
   try {
     const accessToken = await getPayPalAccessToken();
-    const mode = process.env.PAYPAL_MODE || 'sandbox';
-    const baseUrl = mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+    const baseUrl = payPalBaseUrl();
 
     // Step 1: Create Order with AUTHORIZE intent
-    const orderResponse = await fetch(`${baseUrl}/v2/checkout/orders`, {
+    const orderResponse = await fetchWithTimeout(`${baseUrl}/v2/checkout/orders`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -129,26 +249,28 @@ export async function authorisePayment(
             description: `QEEG Report Processing Fee - ${caseReference}`,
             amount: {
               currency_code: 'AUD',
-              value: fee.toFixed(2),
+              // Must be a string with exactly two decimals, e.g. "65.00".
+              value: formatAmountToTwoDecimals(fee),
             },
           },
         ],
       }),
     });
 
-    const orderData: any = await orderResponse.json();
+    const orderData: any = await orderResponse.json().catch(() => ({}));
 
     if (!orderResponse.ok) {
+      logPayPalFailure('Create order', orderResponse.status, orderData);
       return {
         success: false,
         amount: fee,
         currency: 'AUD',
-        error: orderData.message || 'PayPal order creation failed',
+        error: buildPayPalErrorText(orderData, 'PayPal order creation failed'),
       };
     }
 
     // Step 2: Authorise Order
-    const authResponse = await fetch(`${baseUrl}/v2/checkout/orders/${orderData.id}/authorize`, {
+    const authResponse = await fetchWithTimeout(`${baseUrl}/v2/checkout/orders/${orderData.id}/authorize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -156,17 +278,36 @@ export async function authorisePayment(
       },
     });
 
-    const authData: any = await authResponse.json();
+    const authData: any = await authResponse.json().catch(() => ({}));
+
+    if (!authResponse.ok) {
+      logPayPalFailure('Authorise order', authResponse.status, authData);
+      return {
+        success: false,
+        amount: fee,
+        currency: 'AUD',
+        error: buildPayPalErrorText(authData, 'PayPal authorisation failed'),
+      };
+    }
+
     const authorizationId =
-      authData.purchase_units?.[0]?.payments?.authorizations?.[0]?.id || `AUTH-${orderData.id}`;
+      authData.purchase_units?.[0]?.payments?.authorizations?.[0]?.id;
+
+    if (!authorizationId) {
+      return {
+        success: false,
+        amount: fee,
+        currency: 'AUD',
+        error: 'PayPal authorisation completed without a valid authorization id.',
+      };
+    }
 
     return {
-      success: authResponse.ok,
+      success: true,
       authorizationId,
       orderId: orderData.id,
       amount: fee,
       currency: 'AUD',
-      error: authResponse.ok ? undefined : authData.message || 'PayPal authorisation failed',
     };
   } catch (error) {
     return {
@@ -179,16 +320,75 @@ export async function authorisePayment(
 }
 
 /**
+ * Authorises an order that was created by the buyer through the PayPal JS SDK
+ * (intent AUTHORIZE). This must run server-side: the frontend must not keep the
+ * SDK popup's postrobot bridge open across a slow backend round-trip, otherwise
+ * PayPal throws "Window closed for postrobot_method before response" when the
+ * popup closes while the address-verification handshake is still pending.
+ *
+ * Operates on the approved order id: `POST /v2/checkout/orders/{id}/authorize`.
+ */
+export async function authorizePayPalOrder(
+  orderId: string
+): Promise<{ success: boolean; authorizationId?: string; error?: string }> {
+  if (!isPayPalConfigured()) {
+    assertPayPalConfigured('payment authorisation');
+    const mockAuthId = `AUTH-MOCK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    return { success: true, authorizationId: mockAuthId, error: undefined };
+  }
+
+  try {
+    const accessToken = await getPayPalAccessToken();
+
+    const authResponse = await fetchWithTimeout(`${payPalBaseUrl()}/v2/checkout/orders/${orderId}/authorize`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const authData: any = await authResponse.json().catch(() => ({}));
+
+    if (!authResponse.ok) {
+      logPayPalFailure('Authorise approved order', authResponse.status, authData);
+      return {
+        success: false,
+        error: buildPayPalErrorText(
+          authData,
+          `PayPal authorisation failed (${authResponse.status} ${authResponse.statusText}).`
+        ),
+      };
+    }
+
+    const authorizationId = authData.purchase_units?.[0]?.payments?.authorizations?.[0]?.id;
+
+    if (!authorizationId) {
+      return {
+        success: false,
+        error: 'PayPal authorisation completed without a valid authorization id.',
+      };
+    }
+
+    return { success: true, authorizationId, error: undefined };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown PayPal error',
+    };
+  }
+}
+
+/**
  * Captures an authorised payment AFTER the correlation engine successfully compiles the final report.
  */
 export async function capturePayment(
   authorizationId: string,
   amountAUD: number
 ): Promise<PaymentCaptureResult> {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-
-  if (!clientId || authorizationId.startsWith('AUTH-MOCK-')) {
-    // Mock capture mode for testing environments
+  if (!isPayPalConfigured() || authorizationId.startsWith('AUTH-MOCK-')) {
+    assertPayPalConfigured('payment capture');
+    // Mock capture mode for testing environments.
     const mockCaptureId = `CAP-MOCK-${Date.now()}`;
     return {
       success: true,
@@ -200,10 +400,9 @@ export async function capturePayment(
 
   try {
     const accessToken = await getPayPalAccessToken();
-    const mode = process.env.PAYPAL_MODE || 'sandbox';
-    const baseUrl = mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+    const baseUrl = payPalBaseUrl();
 
-    const captureResponse = await fetch(`${baseUrl}/v2/payments/authorizations/${authorizationId}/capture`, {
+    const captureResponse = await fetchWithTimeout(`${baseUrl}/v2/payments/authorizations/${authorizationId}/capture`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -212,20 +411,26 @@ export async function capturePayment(
       body: JSON.stringify({
         amount: {
           currency_code: 'AUD',
-          value: amountAUD.toFixed(2),
+          value: formatAmountToTwoDecimals(amountAUD),
         },
         final_capture: true,
       }),
     });
 
-    const captureData: any = await captureResponse.json();
+    const captureData: any = await captureResponse.json().catch(() => ({}));
+
+    if (!captureResponse.ok) {
+      logPayPalFailure('Capture payment', captureResponse.status, captureData);
+    }
 
     return {
       success: captureResponse.ok,
       captureId: captureData.id,
       amount: amountAUD,
       currency: 'AUD',
-      error: captureResponse.ok ? undefined : captureData.message || 'PayPal capture failed',
+      error: captureResponse.ok
+        ? undefined
+        : buildPayPalErrorText(captureData, 'PayPal capture failed'),
     };
   } catch (error) {
     return {
@@ -241,17 +446,16 @@ export async function capturePayment(
  * Voids an authorised payment if report generation fails or is voided.
  */
 export async function voidPayment(authorizationId: string): Promise<boolean> {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-  if (!clientId || authorizationId.startsWith('AUTH-MOCK-')) {
+  if (!isPayPalConfigured() || authorizationId.startsWith('AUTH-MOCK-')) {
+    assertPayPalConfigured('payment void');
     return true;
   }
 
   try {
     const accessToken = await getPayPalAccessToken();
-    const mode = process.env.PAYPAL_MODE || 'sandbox';
-    const baseUrl = mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+    const baseUrl = payPalBaseUrl();
 
-    const voidResponse = await fetch(`${baseUrl}/v2/payments/authorizations/${authorizationId}/void`, {
+    const voidResponse = await fetchWithTimeout(`${baseUrl}/v2/payments/authorizations/${authorizationId}/void`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,

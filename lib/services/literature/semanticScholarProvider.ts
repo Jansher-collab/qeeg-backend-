@@ -1,4 +1,5 @@
 import { LiteratureResult, LiteratureSource } from './literatureSource';
+import { fetchWithTimeout } from '../timeout';
 
 export class SemanticScholarProvider implements LiteratureSource {
   name: 'SemanticScholar' = 'SemanticScholar';
@@ -10,7 +11,7 @@ export class SemanticScholarProvider implements LiteratureSource {
         query
       )}&limit=${limit}&fields=paperId,title,authors,venue,year,abstract,url,externalIds`;
 
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url);
       if (!response.ok) return [];
 
       const data: any = await response.json();

@@ -1,0 +1,251 @@
+{
+  "caseReference": "REF-253220",
+  "confidenceScore": 0.89,
+  "overallSummary": "QEEG correlation analysis completed for case REF-253220. Findings mapped across 5 clinical domains with validated peer-reviewed literature citations.",
+  "demographics": {
+    "age": 63,
+    "gender": "FEMALE",
+    "handedness": "RIGHT"
+  },
+  "domains": [
+    {
+      "domain": "Medical",
+      "summary": "Neurological electro-anatomical findings and EEG band power deviations mapped against medical neuro-pathology literature.",
+      "keyIndicators": [
+        "Frontal Theta/Beta elevation correlated with attentional circuit dynamics.",
+        "Occipital Alpha peak frequency evaluation within age-normative range.",
+        "Absence of paroxysmal epileptiform spike-wave discharge patterns."
+      ],
+      "recommendations": [
+        "Evaluate underlying sleep architecture and metabolic screening.",
+        "Consider follow-up neurology consultation if focal slowing persists."
+      ],
+      "literatureCitations": [
+        {
+          "id": "PMID-40750920",
+          "title": "Newborn brain development comparison of plateau and plain regions: insights from quantitative EEG.",
+          "authors": [
+            "Zhao X",
+            "Ze B",
+            "Li J",
+            "Huang L",
+            "Tan X"
+          ],
+          "journal": "Pediatr Res",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 40750920) on Newborn brain development comparison of plateau and plain regions: insights from quantitative EEG.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/40750920/",
+          "source": "PubMed",
+          "doi": "10.1038/s41390-025-04220-9"
+        },
+        {
+          "id": "PMID-35528740",
+          "title": "Using Single-Photon Emission Computerized Tomography on Patients With Positive Quantitative Electroencephalogram to Evaluate Chronic Mild Traumatic Brain Injury With Persistent Symptoms.",
+          "authors": [
+            "Gosset A",
+            "Wagman H",
+            "Pavel D",
+            "Cohen PF",
+            "Tarzwell R"
+          ],
+          "journal": "Front Neurol",
+          "year": 2022,
+          "abstract": "PubMed Article (PMID: 35528740) on Using Single-Photon Emission Computerized Tomography on Patients With Positive Quantitative Electroencephalogram to Evaluate Chronic Mild Traumatic Brain Injury With Persistent Symptoms.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/35528740/",
+          "source": "PubMed",
+          "doi": "10.3389/fneur.2022.704844"
+        }
+      ]
+    },
+    {
+      "domain": "Psychological",
+      "summary": "Cognitive control, impulse regulation, and executive processing metrics integrated with TOVA performance data.",
+      "keyIndicators": [
+        "Sustained attention response variability indicator within observed threshold.",
+        "Response Time Variability (RTV) elevated during second quarter of testing.",
+        "Impulsivity score correlates with sensorimotor rhythm (SMR) power dynamics."
+      ],
+      "recommendations": [
+        "Implement cognitive behavioral strategies targeting task persistence.",
+        "Monitor working memory load during structured executive tasks."
+      ],
+      "literatureCitations": [
+        {
+          "id": "S2-b22894c4bf73df41cb46b7ee2924d0a687934934",
+          "title": "Neural correlates of executive function and attention in children with ADHD: An ALE meta-analysis of task-based functional connectivity studies.",
+          "authors": [
+            "Meng Wang",
+            "Jing Yu",
+            "Hyun-Duck Kim",
+            "A. Cruz"
+          ],
+          "journal": "Psychiatry Research",
+          "year": 2025,
+          "abstract": "We conducted a comprehensive meta-analysis of task-based functional MRI studies on executive function and attention in children with attention deficit hyperactivity disorder (ADHD). We searched for studies published before March 20, 2023, in PubMed, Cochrane Library, Web of Science, EBSCO, Embase, and Scopus. The ALE (activation likelihood estimation) method was used to detect differences in brain activation between children with ADHD and comparison children. Fifty-seven (57) studies were included, with 2,231 participants (1,062 children with ADHD). Based on the omnibus meta-analysis findings, significant hypoactivation in children with ADHD relative to comparisons was observed in the frontoparietal network, putamen, insula, cingulate gyrus, and middle temporal gyrus, while ADHD-related hyperactivation was present in the occipital lobe, declive, middle frontal gyrus, and parahippocampal gyrus. This study highlights the critical involvement of the parietal lobe. Results also revealed abnormalities in the frontal lobe and brainstem, suggesting unintegrated primitive reflexes. For stimulant-naive children with ADHD, significant hypoactivation in the right cerebrum was observed compared to controls. Finally, dysfunctional connectivity between the frontoparietal network and the striatum may lead to inefficient working memory, while the cerebellum plays a crucial role in inhibitory control and attention tasks. These findings provide important insights into the pathology of ADHD.",
+          "url": "https://www.semanticscholar.org/paper/b22894c4bf73df41cb46b7ee2924d0a687934934",
+          "source": "SemanticScholar",
+          "doi": "10.1016/j.psychres.2024.116338"
+        },
+        {
+          "id": "S2-d558595642ea496fb8887684a23d032da10737d9",
+          "title": "Intrinsic functional connectivity correlates of cognitive deficits involving sustained attention and executive function in bipolar disorder",
+          "authors": [
+            "Yankun Wu",
+            "Yun-Ai Su",
+            "Lin-lin Zhu",
+            "Ji‐Tao Li",
+            "Qian Li"
+          ],
+          "journal": "BMC Psychiatry",
+          "year": 2023,
+          "abstract": "Background The neural correlate of cognitive deficits in bipolar disorder (BD) is an issue that warrants further investigation. However, relatively few studies have examined the intrinsic functional connectivity (FC) underlying cognitive deficits involving sustained attention and executive function at both the region and network levels, as well as the different relationships between connectivity patterns and cognitive performance, in BD patients and healthy controls (HCs). Methods Patients with BD ( n  = 59) and HCs ( n  = 52) underwent structural and resting-state functional magnetic resonance imaging and completed the Wisconsin Card Sorting Test (WCST), the continuous performance test and a clinical assessment. A seed-based approach was used to evaluate the intrinsic FC alterations in three core neurocognitive networks (the default mode network [DMN], the central executive network [CEN] and the salience network [SN]). Finally, we examined the relationship between FC and cognitive performance by using linear regression analyses. Results Decreased FC was observed within the DMN, in the DMN-SN and DMN-CEN and increased FC was observed in the SN-CEN in BD. The alteration direction of regional FC was consistent with that of FC at the brain network level. Decreased FC between the left posterior cingulate cortex and right anterior cingulate cortex was associated with longer WCST completion time in BD patients (but not in HCs). Conclusions These findings emphasize the dominant role of the DMN in the psychopathology of BD and provide evidence that cognitive deficits in BD may be associated with aberrant FC between the anterior and posterior DMN.",
+          "url": "https://www.semanticscholar.org/paper/d558595642ea496fb8887684a23d032da10737d9",
+          "source": "SemanticScholar",
+          "doi": "10.1186/s12888-023-05083-2"
+        }
+      ]
+    },
+    {
+      "domain": "Nutritional",
+      "summary": "Metabolic co-factors, neurochemical precursors, and micronutrient support targets influencing cortical arousal state.",
+      "keyIndicators": [
+        "Elevated slow-wave activity potentially modulated by magnesium/vitamin D status.",
+        "Neurochemical precursor demand associated with catecholamine synthesis pathways."
+      ],
+      "recommendations": [
+        "Screen serum Ferritin, Vitamin D3, B-complex, and Omega-3 index.",
+        "Consider targeted supplementation under medical supervision to support neurotransmitter synthesis."
+      ],
+      "literatureCitations": [
+        {
+          "id": "PMID-42286921",
+          "title": "QEEG Guided Neurofeedback to Enhance Intellectual Functioning in Children with Intellectual Disability.",
+          "authors": [
+            "Surmeli T",
+            "Ertem A",
+            "Bukhari NC",
+            "Cantor DS",
+            "Eralp E"
+          ],
+          "journal": "Clin EEG Neurosci",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 42286921) on QEEG Guided Neurofeedback to Enhance Intellectual Functioning in Children with Intellectual Disability.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/42286921/",
+          "source": "PubMed",
+          "doi": "10.1177/15500594261452764"
+        },
+        {
+          "id": "PMID-41598846",
+          "title": "Through Massage to the Brain-Neuronal and Neuroplastic Mechanisms of Massage Based on Various Neuroimaging Techniques (EEG, fMRI, and fNIRS).",
+          "authors": [
+            "Chmiel J",
+            "Kurpas D"
+          ],
+          "journal": "J Clin Med",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 41598846) on Through Massage to the Brain-Neuronal and Neuroplastic Mechanisms of Massage Based on Various Neuroimaging Techniques (EEG, fMRI, and fNIRS).",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/41598846/",
+          "source": "PubMed",
+          "doi": "10.3390/jcm15020909"
+        }
+      ]
+    },
+    {
+      "domain": "Lifestyle",
+      "summary": "Circadian rhythm stability, sleep quality, physical activity, and stress reactivity factors influencing EEG stability.",
+      "keyIndicators": [
+        "Sleep onset delay indicators observed in clinical checklist correlates.",
+        "Autonomic arousal index consistent with high nocturnal stress reactivity."
+      ],
+      "recommendations": [
+        "Establish consistent sleep-wake schedule with morning sunlight exposure (10,000 lux).",
+        "Incorporate daily moderate aerobic exercise (30 mins) to enhance neuroplasticity.",
+        "Implement evening blue-light restriction 2 hours prior to sleep."
+      ],
+      "literatureCitations": [
+        {
+          "id": "S2-83944b5e4bc181d1c058a04808dd11a155ef5815",
+          "title": "Efficacy of Radio Electric Asymmetric Conveyer Neuro Psycho Physical Optimization - Brain Wave Optimization-Gamma (REAC NPPO BWO-G) Treatment in Neurovegetative Dysfunction: A Case Report of Enhanced Cognitive Processing and Stress Resilience",
+          "authors": [
+            "Valeria Modesto'",
+            "A. Rinaldi",
+            "V. Fontani",
+            "Salvatore Rinaldi"
+          ],
+          "journal": "Cureus",
+          "year": 2024,
+          "abstract": "Neurovegetative dysfunction from chronic stress impairs cognition, emotional regulation, and quality of life, with limited relief from conventional therapies. The Radio Electric Asymmetric Conveyer (REAC) Neuro Psycho Physical Optimization - Brain Wave Optimization-Gamma (NPPO BWO-G) offers a novel non-invasive approach to restore autonomic balance through brain modulation. This case involves a 63-year-old businessman with atrial fibrillation, fatigue, cognitive decline, and sleep issues. Pre-treatment quantitative electroencephalogram (qEEG) showed low brain activity and excess delta rhythms. After REAC NPPO BWO-G sessions, the patient experienced improved brainwave patterns, cognitive clarity, stress management, and reduced fatigue. These results highlight its potential as a promising treatment for stress-related neurovegetative dysfunction, warranting further study.",
+          "url": "https://www.semanticscholar.org/paper/83944b5e4bc181d1c058a04808dd11a155ef5815",
+          "source": "SemanticScholar",
+          "doi": "10.7759/cureus.71514"
+        },
+        {
+          "id": "S2-7da22d0e3b50404546feff0c1885d8563aebe2d5",
+          "title": "Effects of exercise on the sleep microarchitecture in the aging brain: A study on a sedentary sample",
+          "authors": [
+            "Tuan Z. Cassim",
+            "Keith M. McGregor",
+            "Joe R. Nocera",
+            "Violet V. García",
+            "Christopher G. Sinon"
+          ],
+          "journal": "Frontiers in Systems Neuroscience",
+          "year": 2022,
+          "abstract": "Having a healthy sleep pattern plays a vital role in one’s overall health. Sleep in the elderly is characterized by decreased slow-wave sleep and an increase of REM sleep. Furthermore, quantitative electroencephalographic (qEEG) studies have shown an age-related attenuation of total EEG power in sleep. However, exercise has been shown to improve sleep across all age groups. In this study, we used the Sleep Profiler™ EEG Sleep Monitor to observe EEG changes occurring during sleep following an aerobic exercise intervention. This study was done on older adults (N = 18, with only five subjects containing both pre- and post-data of sufficient quality for analysis) with an age range 60–85 years. The aerobics regimen was performed three times weekly for 12-weeks commencing with 20-min sessions. The time of each session progressed by 1–2 min/session as needed to a maximum time of 45 min per session. The macro-architecture (sleep stages) and microarchitecture (EEG) results were analyzed using MATLAB. For the microarchitecture, our results showed more deep sleep following the aerobic exercise regimen. Furthermore, for the microarchitecture, out results shows an increase in total EEG power post-exercise in both light (N1 and L1) and deep sleep (N2 and N3). These preliminary changes in sleep the microarchitecture suggest that non-pharmacologic methods might mitigate age-related EEG changes with potential implications for neurocognitive health.",
+          "url": "https://www.semanticscholar.org/paper/7da22d0e3b50404546feff0c1885d8563aebe2d5",
+          "source": "SemanticScholar",
+          "doi": "10.3389/fnsys.2022.855107"
+        }
+      ]
+    },
+    {
+      "domain": "Neurofeedback Treatment-Response",
+      "summary": "Evidence-based protocol recommendations, frequency band targets, and anticipated treatment response trajectories.",
+      "keyIndicators": [
+        "Frontal Cz/Fz Theta (4-8 Hz) down-training protocol indicated.",
+        "Sensorimotor Rhythm (SMR 12-15 Hz) enhancement at C4-A2 to support sensorimotor gating.",
+        "Coherence optimization protocol indicated across bilateral parietal networks."
+      ],
+      "recommendations": [
+        "Initiate 20-30 session neurofeedback protocol at 2 sessions per week.",
+        "Re-assess QEEG after 15 sessions to measure cortical impedance and band power normalization."
+      ],
+      "conflictOfInterestDisclosure": "Conflict of Interest Disclosure: Neurofeedback treatment options presented herein are based on published literature and protocol standardisations. The platform maintains no financial interest, sponsorship, or commercial endorsement of specific equipment manufacturers, software vendors, or proprietary neurofeedback systems.",
+      "literatureCitations": [
+        {
+          "id": "PMID-42286921",
+          "title": "QEEG Guided Neurofeedback to Enhance Intellectual Functioning in Children with Intellectual Disability.",
+          "authors": [
+            "Surmeli T",
+            "Ertem A",
+            "Bukhari NC",
+            "Cantor DS",
+            "Eralp E"
+          ],
+          "journal": "Clin EEG Neurosci",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 42286921) on QEEG Guided Neurofeedback to Enhance Intellectual Functioning in Children with Intellectual Disability.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/42286921/",
+          "source": "PubMed",
+          "doi": "10.1177/15500594261452764"
+        },
+        {
+          "id": "PMID-41598846",
+          "title": "Through Massage to the Brain-Neuronal and Neuroplastic Mechanisms of Massage Based on Various Neuroimaging Techniques (EEG, fMRI, and fNIRS).",
+          "authors": [
+            "Chmiel J",
+            "Kurpas D"
+          ],
+          "journal": "J Clin Med",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 41598846) on Through Massage to the Brain-Neuronal and Neuroplastic Mechanisms of Massage Based on Various Neuroimaging Techniques (EEG, fMRI, and fNIRS).",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/41598846/",
+          "source": "PubMed",
+          "doi": "10.3390/jcm15020909"
+        }
+      ]
+    }
+  ],
+  "aiDisclaimer": "Disclaimer: This report was generated using automated analytical correlation pipelines and synthesized literature databases. It is intended strictly as a decision-support tool for licensed practitioners and does not constitute formal medical diagnosis or individual clinical advice.",
+  "compiledAt": "2026-09-07T13:10:12.902Z"
+}

@@ -18,6 +18,7 @@ enum ReportStatus {
   PENDING_RELIABILITY
   RELIABILITY_REJECTED
   PAYMENT_AUTHORISED
+  PENDING_ADMIN_APPROVAL
   GENERATING
   IN_NEUROSCIENTIST_REVIEW
   COMPLETED
@@ -32,16 +33,69 @@ enum PaymentStatus {
   FAILED
 }
 
+enum ProcessingJobStatus {
+  PENDING
+  CLAIMED
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
 model User {
   id                  String               @id @default(uuid())
   email               String               @unique
   passwordHash        String
   role                UserRole             @default(PRACTITIONER)
+  tokenVersion        Int                  @default(0)
+  totpSecret          String?
+  totpEnabled         Boolean              @default(false)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   practitionerProfile PractitionerProfile?
   reports             QeeqReport[]         @relation("SubmittingPractitioner")
   activityLogs        ActivityLog[]
+  twoFactorBackupCodes TwoFactorBackupCode[]
+  legalAcceptances    LegalAcceptance[]
+  legalDocuments      LegalDocument[]
+  knowledgeSourcePdfs KnowledgeSourcePdf[]
+}
+
+model LegalAcceptance {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  acceptanceType  String // DPA | EULA
+  version         String
+  acceptedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, acceptanceType])
+  @@index([userId])
+}
+
+// Registry of the current + historical legal documents (DPA/EULA PDFs) that are
+// shown on the practitioner signup page. The admin panel replaces the active
+// version (no code change); the old PDF is kept as a history row and only the
+// active one is served to new signups. Acceptance records on LegalAcceptance
+// pin the exact version + timestamp each practitioner agreed to.
+model LegalDocument {
+  id               String   @id @default(uuid())
+  documentType     String // DPA | EULA
+  version          String
+  fileName         String
+  filePath         String
+  contentType      String   @default("application/pdf")
+  sizeBytes        Int
+  sha256           String?
+  isActive         Boolean  @default(true)
+  uploadedByUserId String?
+  uploadedBy       User?    @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  uploadedAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  @@unique([documentType, version])
+  @@index([documentType, isActive])
+  @@index([documentType, uploadedAt])
 }
 
 model PractitionerProfile {
@@ -78,7 +132,7 @@ model PasswordResetToken {
 
 model QeeqReport {
   id                     String        @id @default(uuid())
-  caseReference          String
+  caseReference          String        @unique
   status                 ReportStatus  @default(PENDING_RELIABILITY)
   reliabilityScore       Float?
   confidenceScore        Float?
@@ -103,8 +157,9 @@ model QeeqReport {
   updatedAt              DateTime      @updatedAt
   downloadedAt           DateTime?
   purgedAt               DateTime?
+  customRetentionDays    Int?
+  lastReminderSentAt     DateTime?
 
-  @@index([caseReference])
   @@index([submittingPractitionerId])
   @@index([status])
 }
@@ -133,4 +188,104 @@ model SystemSettings {
   description     String?
   updatedByUserId String?
   updatedAt       DateTime @updatedAt
+}
+
+// Single-use, bcrypt-hashed TOTP recovery/backup codes per user.
+model TwoFactorBackupCode {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  used       Boolean  @default(false)
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Background processing queue for correlation + payment lifecycle.
+// Workers claim rows concurrency-safely with `FOR UPDATE SKIP LOCKED`.
+model ProcessingJob {
+  id            String              @id @default(uuid())
+  reportId      String
+  type          String // CORRELATE_AND_CAPTURE | VOID_PAYMENT | CAPTURE_PAYMENT
+  status        ProcessingJobStatus @default(PENDING)
+  attempts      Int                 @default(0)
+  error         String?
+  claimedBy     String?
+  lockExpiresAt DateTime?
+  availableAt   DateTime            @default(now())
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([status, availableAt])
+  @@index([reportId])
+}
+
+// Chunked knowledge-base entries ingested from backend/knowledge-base/*.
+// Used by queryKnowledgeBase() for grounded retrieval-augmented answers.
+model KnowledgeChunk {
+  id         String   @id @default(uuid())
+  sourceFile String
+  title      String
+  content    String
+  chunkIndex Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([sourceFile, chunkIndex])
+  @@index([sourceFile])
+}
+
+// Research PDFs uploaded by the admin through the Admin Panel Knowledge Base
+// section. Ingestion extracts structured LiteratureEntry rows from each PDF;
+// every entry keeps sourcePdfId so it can always be traced back to its source.
+// Status lifecycle: PENDING_INGESTION -> INGESTING -> INGESTED | FAILED,
+// plus RETRACTED for admin-sensitive removals (rows are deleted on retract).
+model KnowledgeSourcePdf {
+  id                String             @id @default(uuid())
+  originalFileName  String
+  fileName          String
+  filePath          String
+  contentType       String             @default("application/pdf")
+  sizeBytes         Int
+  sha256            String?
+  title             String?
+  status            String             @default("PENDING_INGESTION")
+  error             String?
+  entryCount        Int                @default(0)
+  uploadedByUserId  String?
+  uploadedBy        User?              @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  uploadedAt        DateTime           @default(now())
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  entries           LiteratureEntry[]
+
+  @@index([status])
+  @@index([uploadedAt])
+}
+
+// Structured, curated research entries extracted from admin-uploaded source
+// PDFs. Mirrors the correlation engine's LiteratureResult shape so curated
+// references plug straight into report generation and are searchable by the
+// aggregation layer alongside PubMed / Semantic Scholar results.
+model LiteratureEntry {
+  id             String             @id @default(uuid())
+  sourcePdfId    String
+  sourcePdf      KnowledgeSourcePdf @relation(fields: [sourcePdfId], references: [id], onDelete: Cascade)
+  title          String
+  authors        String[]           @default([])
+  journal        String?
+  year           Int?
+  abstract       String?
+  url            String             @default("")
+  source         String             @default("CURATED")
+  doi            String?
+  keywords       String[]           @default([])
+  relevanceScore Float?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([sourcePdfId])
+  @@index([title])
 }

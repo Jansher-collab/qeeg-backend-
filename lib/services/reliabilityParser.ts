@@ -33,6 +33,10 @@ const PII_PATTERNS = [
   /patient[_-]?name/i,
   /first[_-]?name/i,
   /last[_-]?name/i,
+  /\beeg[_-]?id\b/i,
+  /\beeg\s*#\s*[:=]/i,
+  /client[_-]?id\b/i,
+  /subject[_-]?id\b/i,
   /date[_-]?of[_-]?birth/i,
   /\bdob\b/i,
   /social[_-]?security/i,
@@ -47,6 +51,12 @@ const PII_PATTERNS = [
  * and enforce strict de-identification.
  */
 export function verifyIngestionPayload(payload: IngestionPayload): ReliabilityVerificationResult {
+  console.log("=== BACKEND INGESTION PAYLOAD RECEIVED ===", {
+    reliabilityScoreField: (payload as any).reliabilityScore,
+    reliabilityBlock: payload.reliabilityBlock,
+    hasTdtContent: !!payload.tdtContent
+  });
+
   // 1. Verify strict de-identification
   const rawStringified = JSON.stringify(payload);
   for (const pattern of PII_PATTERNS) {
@@ -61,26 +71,25 @@ export function verifyIngestionPayload(payload: IngestionPayload): ReliabilityVe
     }
   }
 
-  // 2. Extract Test/Retest reliability score from TDT header or reliability block
+  // 2. Extract Test/Retest reliability score
   let reliabilityScore = 0;
   let age: number | undefined = payload.demographics?.age;
   let gender: string | undefined = payload.demographics?.gender;
   let handedness: string | undefined = payload.demographics?.handedness;
 
-  if (payload.tdtContent) {
+  if ((payload as any).reliabilityScore !== undefined) {
+    reliabilityScore = Number((payload as any).reliabilityScore);
+  } else if (payload.reliabilityBlock?.testRetest !== undefined) {
+    reliabilityScore = payload.reliabilityBlock.testRetest;
+  } else if (payload.tdtContent) {
     const parsedTdt = parseTdtContent(payload.tdtContent);
     reliabilityScore = parsedTdt.reliabilityScore;
     if (parsedTdt.age !== undefined) age = parsedTdt.age;
     if (parsedTdt.gender !== undefined) gender = parsedTdt.gender;
     if (parsedTdt.handedness !== undefined) handedness = parsedTdt.handedness;
-  } else if (payload.reliabilityBlock) {
-    reliabilityScore =
-      payload.reliabilityBlock.testRetest ??
-      payload.reliabilityBlock.overallReliability ??
-      payload.reliabilityBlock.splitHalf ??
-      0;
   }
 
+  console.log("=== RESOLVED RELIABILITY SCORE ===", reliabilityScore);  
   // 3. Enforce the >= 0.80 reliability threshold backstop
   const passed = reliabilityScore >= MINIMUM_RELIABILITY_THRESHOLD;
   const rejectionReason = passed
@@ -99,6 +108,7 @@ export function verifyIngestionPayload(payload: IngestionPayload): ReliabilityVe
   };
 }
 
+
 /**
  * Parses QEEG .tdt raw text content to extract Reliability block metrics and basic demographics.
  */
@@ -113,33 +123,38 @@ function parseTdtContent(content: string): {
   let gender: string | undefined;
   let handedness: string | undefined;
 
+  // DEBUG: Let's see if content is arriving and check the first few lines
+  console.log("--- PARSING TDT CONTENT ---");
+  console.log("Content length:", content ? content.length : 0);
+
   const lines = content.split(/\r?\n/);
 
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
 
-    // Parse Test-Retest or Reliability metrics
-    if (/^(?:Test-Retest|TestRetest|Reliability|Split-Half)\s*[:=]\s*([0-9.]+)/i.test(trimmed)) {
-      const match = trimmed.match(/([0-9.]+)/);
-      if (match) {
-        reliabilityScore = parseFloat(match[1]);
+    // Log lines that might look like average to see what it's reading
+    if (/average/i.test(trimmed)) {
+      console.log("Found average line match:", JSON.stringify(trimmed));
+      const parts = trimmed.split(/\s+/);
+      console.log("Split parts:", parts);
+      if (parts.length >= 3) {
+        const testRetestVal = parseFloat(parts[2]);
+        console.log("Parsed testRetestVal:", testRetestVal);
+        if (!isNaN(testRetestVal)) {
+          reliabilityScore = testRetestVal;
+        }
       }
     }
 
-    // Parse Demographics
+    // Parse Demographics, etc...
     if (/^Age\s*[:=]\s*([0-9.]+)/i.test(trimmed)) {
       const match = trimmed.match(/([0-9.]+)/);
       if (match) age = parseFloat(match[1]);
     }
-    if (/^Gender\s*[:=]\s*([A-Za-z]+)/i.test(trimmed)) {
-      const match = trimmed.match(/([A-Za-z]+)/);
-      if (match) gender = match[1];
-    }
-    if (/^Handedness\s*[:=]\s*([A-Za-z]+)/i.test(trimmed)) {
-      const match = trimmed.match(/([A-Za-z]+)/);
-      if (match) handedness = match[1];
-    }
   }
+
+  console.log("Final extracted reliabilityScore:", reliabilityScore);
+  console.log("----------------------------");
 
   return {
     reliabilityScore,

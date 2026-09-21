@@ -1,17 +1,18 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { generateSecret, generateURI, verifySync } from 'otplib';
 import { prisma } from '../prisma';
 import { UserRole } from '@prisma/client';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'qeeg-sydney-secure-jwt-secret-2026-production';
 const SESSION_COOKIE_NAME = 'qeeg_session_token';
-const TOKEN_EXPIRY = '24h';
 
 export interface TokenPayload {
   userId: string;
   email: string;
   role: UserRole;
+  tokenVersion: number;
   name?: string;
   profession?: string;
   clinicName?: string;
@@ -50,7 +51,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function generateToken(payload: TokenPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "24h" });
 }
 
 export function verifyToken(token: string): TokenPayload | null {
@@ -61,19 +62,149 @@ export function verifyToken(token: string): TokenPayload | null {
   }
 }
 
+/**
+ * Session revocation: increment the user's tokenVersion so all previously
+ * issued JWTs become invalid at the next authenticated check. Called on
+ * logout, password change, and 2FA disable (revoke-all-devices style).
+ */
+export async function revokeUserSessions(userId: string): Promise<number> {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { tokenVersion: { increment: 1 } },
+  });
+  return updated.tokenVersion;
+}
+
+/**
+ * Returns true if a token's embedded tokenVersion matches the live DB value.
+ * A mismatch means the session has been revoked server-side.
+ */
+export async function isTokenVersionCurrent(
+  payload: TokenPayload | null,
+  userVersion: number
+): Promise<boolean> {
+  return !!payload && typeof payload.tokenVersion === 'number' && payload.tokenVersion === userVersion;
+}
+
+/**
+ * Generates a signed, report-specific collection token for one-click,
+ * authenticated access to a report download (used in practitioner emails).
+ * The token is bound to a single report and expires after 24 hours.
+ */
+export function generateReportCollectionToken(reportId: string): string {
+  return jwt.sign(
+    { type: 'report_collection', reportId },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+}
+
+/**
+ * Validates a report collection token. Returns the bound reportId if valid,
+ * otherwise null (expired, malformed, or wrong payload).
+ */
+export function verifyReportCollectionToken(token: string): string | null {
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as {
+      type?: string;
+      reportId?: string;
+    };
+    if (payload.type === 'report_collection' && payload.reportId) {
+      return payload.reportId;
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
 export function getSessionCookieName(): string {
   return SESSION_COOKIE_NAME;
 }
 
 export function getSessionCookieOptions() {
+  const isProduction = process.env.NODE_ENV === 'production';
   return {
     name: SESSION_COOKIE_NAME,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProduction, // Secure cookies in production (HTTPS only)
     sameSite: 'lax' as const,
     path: '/',
-    maxAge: 60 * 60 * 24, // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours (Express expects milliseconds)
   };
+}
+
+// ----------------------------------------------------
+// TOTP 2FA (Google Authenticator compatible)
+// ----------------------------------------------------
+
+const TOTP_ISSUER = 'QEEG.com.au';
+const TOTP_TOLERANCE_SECONDS = 30; // ±1 time-step for clock drift
+
+export function createTOTPSecret(): string {
+  return generateSecret();
+}
+
+export function generateTOTPAuthURL(email: string, secret: string): string {
+  return generateURI({ issuer: TOTP_ISSUER, label: email, secret });
+}
+
+export function verifyTOTPCode(secret: string, code: string): boolean {
+  if (!/^\d{6}$/.test(code.trim())) return false;
+  try {
+    const result = verifySync({
+      secret,
+      token: code.trim(),
+      epochTolerance: TOTP_TOLERANCE_SECONDS,
+    });
+    return result.valid;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Generates 10 single-use backup codes, hashed with bcrypt before storage.
+ * Returns the plaintext codes exactly once for display.
+ */
+export async function generateBackupCodes(userId: string): Promise<string[]> {
+  const codes: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    codes.push(crypto.randomBytes(5).toString('hex').toUpperCase().replace(/(.{5})(.{5})/, '$1-$2'));
+  }
+  const hashed = await Promise.all(codes.map((c) => hashPassword(c.replace(/-/g, ''))));
+
+  // Replace any existing codes for this user.
+  await prisma.twoFactorBackupCode.deleteMany({ where: { userId } });
+  await prisma.twoFactorBackupCode.createMany({
+    data: hashed.map((codeHash) => ({ userId, codeHash })),
+  });
+
+  return codes;
+}
+
+/**
+ * Validates a backup code, marking it used on success. Returns true if valid.
+ */
+export async function verifyAndConsumeBackupCode(userId: string, code: string): Promise<boolean> {
+  const normalized = code.replace(/-/g, '').trim().toUpperCase();
+  const candidates = await prisma.twoFactorBackupCode.findMany({
+    where: { userId, used: false },
+  });
+  for (const candidate of candidates) {
+    if (await verifyPassword(normalized, candidate.codeHash)) {
+      await prisma.twoFactorBackupCode.update({
+        where: { id: candidate.id },
+        data: { used: true, usedAt: new Date() },
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function countUnusedBackupCodes(userId: string): Promise<number> {
+  return prisma.twoFactorBackupCode.count({ where: { userId, used: false } });
 }
 
 /**
