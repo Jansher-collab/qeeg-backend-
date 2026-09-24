@@ -1036,6 +1036,10 @@ app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: 
       });
     }
 
+    console.info(
+      `[payments/orders] Issued fresh PayPal order ${created.orderId} for case ${caseReference} (${created.amount} ${created.currency}, user ${user.id}).`
+    );
+
     await logActivity({
       userId: user.id,
       caseReference,
@@ -1068,12 +1072,35 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
     // respond, so the frontend only closes the modal after authorisation is
     // confirmed at PayPal.
     if (!authId && payload.paypalOrderId) {
-      const authResult = await authorizePayPalOrder(payload.paypalOrderId);
+      const orderId: string =
+        typeof payload.paypalOrderId === 'string' ? payload.paypalOrderId.trim() : '';
+      console.info(
+        `[submit] Authorising PayPal order ${orderId || '(empty)'} for case ${payload.caseReference ?? '(malformed)'} (user ${user.id}).`
+      );
+      if (!orderId) {
+        return res.status(400).json({
+          error: 'A valid PayPal order id is required to authorise payment.',
+          errorCode: 'PAYMENT_FAILED',
+        });
+      }
+      const authResult = await authorizePayPalOrder(orderId, {
+        caseReference: typeof payload.caseReference === 'string' ? payload.caseReference.trim() : undefined,
+      });
       if (!authResult.success) {
+        console.error(`[submit] PayPal authorisation failed for order ${orderId}:`, authResult.error);
         return res.status(400).json({
           error: `PayPal authorisation failed: ${authResult.error || 'Unknown error.'}`,
           errorCode: 'PAYMENT_FAILED',
         });
+      }
+      if (authResult.idempotent) {
+        console.info(
+          `[submit] Idempotent authorisation for order ${orderId} → auth ${authResult.authorizationId} (case ${payload.caseReference ?? 'unknown'}).`
+        );
+      } else {
+        console.info(
+          `[submit] Authorisation succeeded for order ${orderId} → auth ${authResult.authorizationId}.`
+        );
       }
       authId = authResult.authorizationId;
     }

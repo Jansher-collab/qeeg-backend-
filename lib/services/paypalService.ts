@@ -200,6 +200,15 @@ export async function createPayPalOrder(
             },
           },
         ],
+        // Mirrors the application context that used to be supplied by the
+        // client-side creation. Without shipping_preference NO_SHIPPING the
+        // sandbox popup can push an address-verification step that derails the
+        // approval flow for server-created orders.
+        application_context: {
+          brand_name: 'QEEG.com.au',
+          shipping_preference: 'NO_SHIPPING',
+          user_action: 'CONTINUE',
+        },
       }),
     });
 
@@ -224,6 +233,11 @@ export async function createPayPalOrder(
       };
     }
 
+    console.info(
+      `[paypalService] Created fresh PayPal order ${orderData.id} for case ${caseReference} ` +
+        `(${formatAmountToTwoDecimals(fee)} AUD, ${getPayPalMode()} mode, sandboxId=${Boolean(process.env.PAYPAL_SANDBOX_CLIENT_ID)}).`
+    );
+
     return {
       success: true,
       orderId: orderData.id,
@@ -238,6 +252,96 @@ export async function createPayPalOrder(
       error: error instanceof Error ? error.message : 'Unknown PayPal error',
     };
   }
+}
+
+export interface PayPalOrderSnapshot {
+  exists: boolean;
+  status?: string;
+  referenceId?: string;
+  authorizationId?: string;
+  error?: string;
+}
+
+/**
+ * Looks up an existing order under this account's access token. Used before
+ * authorising to distinguish the classic INVALID_RESOURCE_ID cases:
+ *  - order was created under a different app/credentials → not found here;
+ *  - order was already authorised (status COMPLETED) → idempotent retry;
+ *  - order is still APPROVED → safe to authorise.
+ */
+export async function getPayPalOrder(
+  orderId: string
+): Promise<PayPalOrderSnapshot> {
+  if (!orderId || typeof orderId !== 'string' || !orderId.trim()) {
+    return { exists: false, error: 'No PayPal order id supplied.' };
+  }
+
+  if (!isPayPalConfigured()) {
+    // Mock-mode development: report the mock order as existing so the
+    // authorised flow proceeds exactly as it would in a real sandbox.
+    const orderIdTrimmed = orderId.trim();
+    return {
+      exists: orderIdTrimmed.startsWith('ORDER-MOCK-') || orderIdTrimmed.startsWith('AUTH-MOCK-'),
+      status: 'CREATED',
+    };
+  }
+
+  try {
+    const accessToken = await getPayPalAccessToken();
+    const res = await fetchWithTimeout(
+      `${payPalBaseUrl()}/v2/checkout/orders/${encodeURIComponent(orderId.trim())}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!res.ok) {
+      const data: any = await res.json().catch(() => ({}));
+      logPayPalFailure(`Lookup order ${orderId}`, res.status, data);
+      return {
+        exists: false,
+        error: buildPayPalErrorText(
+          data,
+          `PayPal order ${orderId} could not be looked up (HTTP ${res.status}).`
+        ),
+      };
+    }
+
+    const data: any = await res.json();
+    return {
+      exists: true,
+      status: typeof data?.status === 'string' ? data.status : undefined,
+      referenceId:
+        typeof data?.purchase_units?.[0]?.reference_id === 'string'
+          ? data.purchase_units[0].reference_id
+          : undefined,
+      authorizationId:
+        typeof data?.purchase_units?.[0]?.payments?.authorizations?.[0]?.id === 'string'
+          ? data.purchase_units[0].payments.authorizations[0].id
+          : undefined,
+    };
+  } catch (error) {
+    return {
+      exists: false,
+      error: error instanceof Error ? error.message : 'PayPal order lookup failed',
+    };
+  }
+}
+
+export interface AuthorizeOrderExpectations {
+  /** Case the order must have been created for (its purchase unit reference_id). */
+  caseReference?: string;
+}
+
+export interface AuthorizeOrderResult {
+  success: boolean;
+  authorizationId?: string;
+  idempotent?: boolean;
+  error?: string;
 }
 
 /**
@@ -425,10 +529,24 @@ export async function authorisePayment(
  * popup closes while the address-verification handshake is still pending.
  *
  * Operates on the approved order id: `POST /v2/checkout/orders/{id}/authorize`.
+ *
+ * INVALID_RESOURCE_ID hardening — before authorising we verify the order still
+ * exists under this account's token, is linked to the expected case, and is in
+ * the authorised state:
+ *  - a fresh/successful retry that re-uses a now-used order would otherwise
+ *    fail with "Specified resource ID does not exist" at PayPal; if the order
+ *    shows an existing authorisation we recover idempotently instead;
+ *  - an order created under a different app/credentials fails fast here with a
+ *    clear "fresh order required" message instead of an opaque PayPal error.
  */
 export async function authorizePayPalOrder(
-  orderId: string
-): Promise<{ success: boolean; authorizationId?: string; error?: string }> {
+  orderId: string,
+  expected?: AuthorizeOrderExpectations
+): Promise<AuthorizeOrderResult> {
+  if (!orderId || typeof orderId !== 'string' || !orderId.trim()) {
+    return { success: false, error: 'A valid PayPal order id is required to authorise payment.' };
+  }
+
   if (!isPayPalConfigured()) {
     assertPayPalConfigured('payment authorisation');
     const mockAuthId = `AUTH-MOCK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
@@ -437,8 +555,63 @@ export async function authorizePayPalOrder(
 
   try {
     const accessToken = await getPayPalAccessToken();
+    const baseUrl = payPalBaseUrl();
+    const targetOrderId = orderId.trim();
 
-    const authResponse = await fetchWithTimeout(`${payPalBaseUrl()}/v2/checkout/orders/${orderId}/authorize`, {
+    // Step 1 — verify the order still exists and belongs to this checkout.
+    const snapshot = await getPayPalOrder(targetOrderId);
+    if (!snapshot.exists) {
+      console.error(
+        `[paypalService] Order ${targetOrderId} does not exist for authorisation` +
+          (snapshot.error ? ` (${snapshot.error}).` : ' — verifying against current account.' )
+      );
+      return {
+        success: false,
+        error: `PayPal order ${targetOrderId} could not be found for authorisation on this account. ` +
+          'The order may already have been used or was created under another client. ' +
+          'Please retry the payment — a fresh order will be issued automatically.',
+      };
+    }
+
+    if (expected?.caseReference && snapshot.referenceId && snapshot.referenceId !== expected.caseReference) {
+      console.error(
+        `[paypalService] Order ${targetOrderId} was created for case ${snapshot.referenceId}, not ${expected.caseReference} — refusing to authorise mismatched order.`
+      );
+      return {
+        success: false,
+        error: `PayPal order ${targetOrderId} belongs to case ${snapshot.referenceId}, not ${expected.caseReference}. ` +
+          'Please retry the payment so a fresh order is issued for this case.',
+      };
+    }
+
+    // Step 2 — idempotent recovery. If this order was ALREADY authorised (a
+    // prior submit reached PayPal but its HTTP response was lost/never
+    // delivered), re-authorising would return INVALID_RESOURCE_ID. Reuse the
+    // existing authorisation so a retry succeeds instead of dead-ending.
+    if (snapshot.status === 'COMPLETED' && snapshot.authorizationId) {
+      console.info(
+        `[paypalService] Order ${targetOrderId} is already authorised (${snapshot.authorizationId}); treating as an idempotent success (case=${snapshot.referenceId ?? 'unknown'}).`
+      );
+      return { success: true, authorizationId: snapshot.authorizationId, idempotent: true, error: undefined };
+    }
+
+    if (snapshot.status !== 'APPROVED') {
+      console.error(
+        `[paypalService] Order ${targetOrderId} is not authorisable (status=${snapshot.status ?? 'unknown'}).`
+      );
+      return {
+        success: false,
+        error: `PayPal order ${targetOrderId} is not in an authorisable state (status=${snapshot.status ?? 'unknown'}). ` +
+          'Please retry the payment — a fresh order will be issued automatically.',
+      };
+    }
+
+    console.info(
+      `[paypalService] Authorising approved order ${targetOrderId} (case=${snapshot.referenceId ?? 'unknown'}).`
+    );
+
+    // Step 3 — authorise the verified, APPROVED order.
+    const authResponse = await fetchWithTimeout(`${baseUrl}/v2/checkout/orders/${encodeURIComponent(targetOrderId)}/authorize`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -450,6 +623,16 @@ export async function authorizePayPalOrder(
 
     if (!authResponse.ok) {
       logPayPalFailure('Authorise approved order', authResponse.status, authData);
+      // Second-chance diagnosis: re-fetch the order to capture its true state
+      // (used? expired? created under another app?) so the INVALID_RESOURCE_ID
+      // family is fully explained in the logs.
+      const recheck = await getPayPalOrder(targetOrderId).catch(
+        () => ({ exists: false, status: undefined as string | undefined })
+      );
+      console.error(
+        `[paypalService] Authorise failed for ${targetOrderId} (HTTP ${authResponse.status}); order recheck:`,
+        JSON.stringify({ exists: recheck?.exists, status: recheck?.status ?? null })
+      );
       return {
         success: false,
         error: buildPayPalErrorText(
@@ -468,6 +651,9 @@ export async function authorizePayPalOrder(
       };
     }
 
+    console.info(
+      `[paypalService] Order ${targetOrderId} authorised successfully → authorizationId=${authorizationId}.`
+    );
     return { success: true, authorizationId, error: undefined };
   } catch (error) {
     return {
