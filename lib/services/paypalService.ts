@@ -142,6 +142,104 @@ export interface PaymentCaptureResult {
   error?: string;
 }
 
+export interface PayPalOrderCreateResult {
+  success: boolean;
+  orderId?: string;
+  amount: number;
+  currency: string;
+  error?: string;
+}
+
+/**
+ * Creates a BRAND-NEW PayPal order (intent AUTHORIZE) with NO authorize/capture
+ * step. This is the server-side source of truth for order creation: every
+ * payment attempt or retry must call this so a stale/expired order id is never
+ * reused (a reused id fails at authorize time with PayPal INVALID_RESOURCE_ID).
+ *
+ * The returned order id is handed to the frontend PayPalButtons.createOrder so
+ * the buyer approves THIS specific fresh order; /api/reports/submit then
+ * authorizes the same order server-side.
+ */
+export async function createPayPalOrder(
+  caseReference: string,
+  amountAUD?: number
+): Promise<PayPalOrderCreateResult> {
+  const fee = amountAUD ?? (await getReportFeeAUD());
+
+  if (!isPayPalConfigured()) {
+    assertPayPalConfigured('payment order creation');
+    // Mock order mode — development only.
+    return {
+      success: true,
+      orderId: `ORDER-MOCK-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      amount: fee,
+      currency: 'AUD',
+    };
+  }
+
+  try {
+    const accessToken = await getPayPalAccessToken();
+    const baseUrl = payPalBaseUrl();
+
+    const orderResponse = await fetchWithTimeout(`${baseUrl}/v2/checkout/orders`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        intent: 'AUTHORIZE',
+        purchase_units: [
+          {
+            reference_id: caseReference,
+            description: `QEEG Report Processing Fee - ${caseReference}`,
+            amount: {
+              currency_code: 'AUD',
+              // Must be a string with exactly two decimals, e.g. "65.00".
+              value: formatAmountToTwoDecimals(fee),
+            },
+          },
+        ],
+      }),
+    });
+
+    const orderData: any = await orderResponse.json().catch(() => ({}));
+
+    if (!orderResponse.ok) {
+      logPayPalFailure('Create order (server-side)', orderResponse.status, orderData);
+      return {
+        success: false,
+        amount: fee,
+        currency: 'AUD',
+        error: buildPayPalErrorText(orderData, 'PayPal order creation failed'),
+      };
+    }
+
+    if (!orderData.id) {
+      return {
+        success: false,
+        amount: fee,
+        currency: 'AUD',
+        error: 'PayPal order creation completed without a valid order id.',
+      };
+    }
+
+    return {
+      success: true,
+      orderId: orderData.id,
+      amount: fee,
+      currency: 'AUD',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      amount: fee,
+      currency: 'AUD',
+      error: error instanceof Error ? error.message : 'Unknown PayPal error',
+    };
+  }
+}
+
 /**
  * Gets current report fee from database settings (defaults to 65.00 AUD if not set).
  */

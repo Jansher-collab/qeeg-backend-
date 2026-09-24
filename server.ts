@@ -31,6 +31,7 @@ import { validateEnvironment, reportEnvironmentIssues } from './lib/config/env';
 import {
   authorisePayment,
   authorizePayPalOrder,
+  createPayPalOrder,
   voidPayment,
   getReportFeeAUD,
   setReportFeeAUD,
@@ -1001,6 +1002,52 @@ app.put('/api/practitioner/profile', authenticateUser, async (req: Request, res:
     res.json({ message: 'Profile updated successfully.', profile: updatedProfile });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to update profile.' });
+  }
+});
+
+// ----------------------------------------------------
+// 4a. PayPal Order Creation — server-side source of truth
+// ----------------------------------------------------
+// The frontend's PayPalButtons.createOrder calls this endpoint to obtain a
+// BRAND-NEW order on every payment attempt/retry. Keeping order creation on the
+// backend guarantees a stale/expired order id is never reused — re-authorising
+// a used order yields PayPal INVALID_RESOURCE_ID. The approve flow in
+// /api/reports/submit then authorizes the freshly-created order the caller
+// just received.
+app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const caseReference =
+      typeof req.body?.caseReference === 'string' && req.body.caseReference.trim()
+        ? req.body.caseReference.trim()
+        : undefined;
+
+    if (!caseReference) {
+      return res.status(400).json({ error: 'A caseReference is required to create a payment order.' });
+    }
+
+    const reportFee = await getReportFeeAUD();
+    const created = await createPayPalOrder(caseReference, reportFee);
+
+    if (!created.success || !created.orderId) {
+      return res.status(400).json({
+        error: `PayPal order creation failed: ${created.error || 'Unknown error.'}`,
+        errorCode: 'PAYMENT_FAILED',
+      });
+    }
+
+    await logActivity({
+      userId: user.id,
+      caseReference,
+      action: 'PAYPAL_ORDER_CREATED',
+      details: { orderId: created.orderId, amount: created.amount },
+      ipAddress: req.ip || '127.0.0.1',
+    });
+
+    res.json({ orderId: created.orderId, amount: created.amount, currency: created.currency });
+  } catch (error: any) {
+    console.error('Create PayPal order error:', error);
+    res.status(500).json({ error: error.message || 'Failed to create payment order.' });
   }
 });
 
