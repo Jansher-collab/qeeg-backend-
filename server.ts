@@ -35,6 +35,7 @@ import {
   voidPayment,
   getReportFeeAUD,
   setReportFeeAUD,
+  logPayPalCredentialSource,
 } from './lib/services/paypalService';
 import { executePurgeOnDownload } from './lib/services/purgeService';
 import {
@@ -1998,6 +1999,10 @@ app.listen(PORT, () => {
   console.log(`[CORS Allowed Origin] ${FRONTEND_URL}`);
   console.log(`[Healthcheck URL] http://localhost:${PORT}/health`);
   console.log('====================================================');
+
+  // Report the resolved PayPal mode + credential pair at boot so a
+  // sandbox/live mismatch is visible before the first checkout attempt.
+  logPayPalCredentialSource();
 
   // Data-lifecycle backstop (Spec 4.3g): purge any completed report that has
   // not been purged within the admin-configurable retention window (default 30

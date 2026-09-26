@@ -23,6 +23,13 @@ export function getPayPalMode(): PayPalMode {
  *                 falling back to the base PAYPAL_* pair when only one set
  *                 has been configured (safe: a live pair against the sandbox
  *                 endpoint is rejected by PayPal and never captures funds).
+ *
+ * The sandbox pair is selected as a UNIT, never per variable. Falling back
+ * per variable could pair a sandbox client id with a live secret (or vice
+ * versa) when only one of the two sandbox vars is set — two credentials from
+ * different PayPal apps, which always fails OAuth with 401 invalid_client and
+ * is very hard to diagnose. Pair-wise selection keeps every attempt internally
+ * consistent and simply reports the configuration as incomplete.
  */
 export function getPayPalCredentials(): { clientId?: string; clientSecret?: string } {
   if (getPayPalMode() === 'live') {
@@ -31,10 +38,79 @@ export function getPayPalCredentials(): { clientId?: string; clientSecret?: stri
       clientSecret: process.env.PAYPAL_SECRET,
     };
   }
+
+  const sandboxClientId = process.env.PAYPAL_SANDBOX_CLIENT_ID;
+  const sandboxSecret = process.env.PAYPAL_SANDBOX_SECRET;
+
+  // A complete sandbox pair always wins.
+  if (sandboxClientId && sandboxSecret) {
+    return { clientId: sandboxClientId, clientSecret: sandboxSecret };
+  }
+
+  // Exactly one sandbox var set = a half-finished configuration. Do NOT stitch
+  // it together with a base-pair credential; treat the sandbox pair as absent
+  // and let the caller fall back to a self-consistent base pair.
+  if (sandboxClientId || sandboxSecret) {
+    console.warn(
+      `[paypalService] Incomplete sandbox credentials ` +
+        `(PAYPAL_SANDBOX_CLIENT_ID ${sandboxClientId ? 'set' : 'missing'}, ` +
+        `PAYPAL_SANDBOX_SECRET ${sandboxSecret ? 'set' : 'missing'}). ` +
+        `A client id and secret must come from the same PayPal app — the sandbox pair is ` +
+        `being ignored rather than mixed with PAYPAL_CLIENT_ID/PAYPAL_SECRET.`
+    );
+  }
+
   return {
-    clientId: process.env.PAYPAL_SANDBOX_CLIENT_ID || process.env.PAYPAL_CLIENT_ID,
-    clientSecret: process.env.PAYPAL_SANDBOX_SECRET || process.env.PAYPAL_SECRET,
+    clientId: process.env.PAYPAL_CLIENT_ID,
+    clientSecret: process.env.PAYPAL_SECRET,
   };
+}
+
+/**
+ * Identifies WHICH env-var pair the current mode actually resolved to.
+ *
+ * This matters because the sandbox branch of getPayPalCredentials() falls back
+ * to the production PAYPAL_CLIENT_ID/PAYPAL_SECRET pair when no dedicated
+ * sandbox pair is set. That fallback is safe (PayPal rejects a live pair against
+ * the sandbox host, so funds can never move) but it silently makes sandbox mode
+ * depend on the base pair holding sandbox keys. Surfacing the source in logs is
+ * what makes that misconfiguration diagnosable instead of mysterious.
+ */
+export function describePayPalCredentialSource(): {
+  mode: PayPalMode;
+  source: 'sandbox' | 'live' | 'fallback-to-live-vars' | 'unset';
+  clientIdHint: string;
+} {
+  const mode = getPayPalMode();
+
+  if (mode === 'live') {
+    return {
+      mode,
+      source: process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_SECRET ? 'live' : 'unset',
+      clientIdHint: hintClientId(process.env.PAYPAL_CLIENT_ID),
+    };
+  }
+
+  const hasSandboxPair = Boolean(
+    process.env.PAYPAL_SANDBOX_CLIENT_ID && process.env.PAYPAL_SANDBOX_SECRET
+  );
+  const hasBasePair = Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_SECRET);
+
+  return {
+    mode,
+    source: hasSandboxPair ? 'sandbox' : hasBasePair ? 'fallback-to-live-vars' : 'unset',
+    clientIdHint: hintClientId(
+      process.env.PAYPAL_SANDBOX_CLIENT_ID || process.env.PAYPAL_CLIENT_ID
+    ),
+  };
+}
+
+/** Non-sensitive fingerprint of a client id, safe to write to logs. */
+function hintClientId(clientId?: string): string {
+  if (!clientId) return 'none';
+  const trimmed = clientId.trim();
+  if (trimmed.length <= 8) return `${trimmed}(len=${trimmed.length})`;
+  return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}(len=${trimmed.length})`;
 }
 
 export function isPayPalConfigured(): boolean {
@@ -69,6 +145,37 @@ function assertPayPalConfigured(reason: string): void {
 }
 
 /**
+ * Logs which PayPal credential pair the resolved mode is actually using, and
+ * warns when sandbox mode is silently borrowing the production pair. Safe to
+ * call at any time; call once at boot so a misconfiguration is visible before
+ * the first payment attempt rather than after a failed checkout.
+ */
+export function logPayPalCredentialSource(): void {
+  const { mode, source, clientIdHint } = describePayPalCredentialSource();
+
+  if (source === 'unset') {
+    console.warn(
+      `[paypalService] No PayPal credentials resolved for ${mode} mode — ` +
+        `orders will use the development mock path and no real payment can be taken.`
+    );
+    return;
+  }
+
+  console.info(
+    `[paypalService] PayPal mode=${mode}, credentialSource=${source}, clientId=${clientIdHint}.`
+  );
+
+  if (source === 'fallback-to-live-vars') {
+    console.warn(
+      `[paypalService] PAYPAL_MODE=sandbox is falling back to PAYPAL_CLIENT_ID/PAYPAL_SECRET ` +
+        `because PAYPAL_SANDBOX_CLIENT_ID/PAYPAL_SANDBOX_SECRET are not set. This only works while ` +
+        `that base pair holds sandbox keys — if those are ever replaced with live credentials, ` +
+        `PayPal returns 401 invalid_client and every checkout fails. Set a dedicated sandbox pair.`
+    );
+  }
+}
+
+/**
  * Formats an amount as the strict two-decimal string PayPal's Orders v2 API
  * requires (e.g. 65 -> "65.00"). The `value` field must be a string, never a
  * bare number or scientific notation, or PayPal rejects it with a 422
@@ -81,18 +188,29 @@ function formatAmountToTwoDecimals(amount: number): string {
 /**
  * Logs a failed PayPal API response in full — including the nested `details`
  * array and `debug_id` — so 422 business validation errors can be diagnosed.
+ *
+ * Handles both PayPal error shapes: the Orders/Payments body
+ * ({name, message, details, debug_id}) and the OAuth body
+ * ({error, error_description}), which would otherwise log as all-null.
  */
 function logPayPalFailure(operation: string, status: number, payload: any): void {
+  const isOAuthShape = Boolean(payload?.error) && !payload?.name && !payload?.message;
+
   console.error(
     `[paypalService] ${operation} failed (HTTP ${status})`,
     JSON.stringify(
-      {
-        name: payload?.name ?? null,
-        message: payload?.message ?? null,
-        details: Array.isArray(payload?.details) ? payload.details : null,
-        debug_id: payload?.debug_id ?? null,
-        links: payload?.links ?? null,
-      },
+      isOAuthShape
+        ? {
+            error: payload?.error ?? null,
+            error_description: payload?.error_description ?? null,
+          }
+        : {
+            name: payload?.name ?? null,
+            message: payload?.message ?? null,
+            details: Array.isArray(payload?.details) ? payload.details : null,
+            debug_id: payload?.debug_id ?? null,
+            links: payload?.links ?? null,
+          },
       null,
       2
     )
@@ -233,9 +351,11 @@ export async function createPayPalOrder(
       };
     }
 
+    const credSource = describePayPalCredentialSource();
     console.info(
       `[paypalService] Created fresh PayPal order ${orderData.id} for case ${caseReference} ` +
-        `(${formatAmountToTwoDecimals(fee)} AUD, ${getPayPalMode()} mode, sandboxId=${Boolean(process.env.PAYPAL_SANDBOX_CLIENT_ID)}).`
+        `(${formatAmountToTwoDecimals(fee)} AUD, ${credSource.mode} mode, ` +
+        `credentialSource=${credSource.source}, clientId=${credSource.clientIdHint}).`
     );
 
     return {
@@ -245,6 +365,14 @@ export async function createPayPalOrder(
       currency: 'AUD',
     };
   } catch (error) {
+    // Reached when the OAuth handshake or the fetch itself fails (bad
+    // credentials, DNS, timeout). Log it so the operator sees the cause here
+    // rather than only in the generic 400 the client receives.
+    console.error(
+      `[paypalService] Create order (server-side) threw for case ${caseReference} ` +
+        `(${formatAmountToTwoDecimals(fee)} AUD, ${getPayPalMode()} mode):`,
+      error instanceof Error ? error.message : error
+    );
     return {
       success: false,
       amount: fee,
@@ -402,10 +530,44 @@ async function getPayPalAccessToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(`PayPal OAuth failed: ${response.statusText}`);
+    const payload: any = await response.json().catch(() => ({}));
+    logPayPalFailure('OAuth access token', response.status, payload);
+
+    // 401 invalid_client is the dominant misconfiguration: the client id/secret
+    // pair does not belong to the host we just called. Almost always a live
+    // pair being sent to the sandbox host (or vice versa) because the sandbox
+    // branch of getPayPalCredentials() falls back to the base PAYPAL_* vars.
+    // Surface the resolved mode + credential source so the cause is obvious
+    // instead of a bare "Unauthorized".
+    if (response.status === 401 || payload?.name === 'invalid_client') {
+      const { mode, source, clientIdHint } = describePayPalCredentialSource();
+      const expectedHost = mode === 'live' ? 'api-m.paypal.com (live)' : 'api-m.sandbox.paypal.com (sandbox)';
+      const actualHost = baseUrl.replace('https://', '');
+      const guidance =
+        mode === 'sandbox' && source === 'fallback-to-live-vars'
+          ? `PAYPAL_MODE=sandbox is using the fallback PAYPAL_CLIENT_ID/PAYPAL_SECRET pair because ` +
+            `PAYPAL_SANDBOX_CLIENT_ID/PAYPAL_SANDBOX_SECRET are not set — set them to the sandbox ` +
+            `app's credentials from developer.paypal.com.`
+          : `The configured client id does not authenticate against ${actualHost}. ` +
+            `Verify the client id and secret belong to the same PayPal app and match PAYPAL_MODE.`;
+
+      throw new Error(
+        `PayPal OAuth rejected the credentials (HTTP 401 invalid_client) at ${actualHost}. ` +
+          `Resolved mode=${mode}, credential source=${source}, clientId=${clientIdHint}. ` +
+          `Expected credentials for ${expectedHost}. ${guidance}`
+      );
+    }
+
+    throw new Error(
+      `PayPal OAuth failed: ${response.status} ${response.statusText || ''}`.trim() +
+        (payload?.message ? ` — ${payload.message}` : '')
+    );
   }
 
   const data: any = await response.json();
+  if (!data?.access_token) {
+    throw new Error('PayPal OAuth returned no access_token in the response body.');
+  }
   return data.access_token;
 }
 
