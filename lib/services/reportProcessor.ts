@@ -8,8 +8,8 @@ import { generateReportCollectionToken } from './authService';
 import { sendReportReadyNotification } from './emailService';
 import { logActivity } from './activityLogger';
 import { withTimeout } from './timeout';
+import { getPublicUrl } from '../config/publicUrl';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Overall budget for a single in-band correlation run. Bounded so a hung
@@ -155,7 +155,12 @@ export async function processReportGeneration(reportId: string): Promise<boolean
         practitioner?.email;
       if (recipient) {
         const collectionToken = generateReportCollectionToken(updatedReport.id);
-        const collectionLink = `${FRONTEND_URL}/portal?reportId=${updatedReport.id}&token=${collectionToken}`;
+        // Public HTTPS domain, not the CORS origin: this one-time signed
+        // collection link is emailed to the practitioner, so it must not
+        // inherit a localhost / VPS :3000 origin.
+        const collectionLink = getPublicUrl(
+          `/portal?reportId=${updatedReport.id}&token=${collectionToken}`
+        );
         const email = await sendReportReadyNotification(
           recipient,
           practitioner?.practitionerProfile?.fullName || 'Practitioner',

@@ -2,8 +2,7 @@ import { prisma } from '../prisma';
 import { sendReportAutoReminderNotification } from './emailService';
 import { logActivity } from './activityLogger';
 import { getReportRetentionDays } from './settingsService';
-
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+import { getPublicUrl } from '../config/publicUrl';
 
 // Recurring auto-reminder logic (Spec): a report that is ready for download
 // (COMPLETED) but still pending download is emailed every 3 days — anchored on
@@ -128,7 +127,7 @@ export async function runReportReminderSweep(): Promise<number> {
       report.caseReference,
       retentionDays,
       remainingDays,
-      `${FRONTEND_URL}/portal`
+      getPublicUrl('/portal')
     );
 
     if (!result.success) {

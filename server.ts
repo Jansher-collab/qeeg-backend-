@@ -28,6 +28,7 @@ import { authRateLimit, sensitiveAuthRateLimit, submitRateLimit } from './lib/se
 import { verifyIngestionPayload } from './lib/services/reliabilityParser';
 import { generateCaseReference, normalizeCaseReference, isCaseReferenceConflict } from './lib/services/caseReference';
 import { validateEnvironment, reportEnvironmentIssues } from './lib/config/env';
+import { getPublicBaseUrl, getPublicUrl } from './lib/config/publicUrl';
 import {
   authorisePayment,
   authorizePayPalOrder,
@@ -663,7 +664,9 @@ app.post('/api/auth/forgot-password', sensitiveAuthRateLimit, async (req: Reques
     }
 
     const token = await createPasswordResetToken(user.email);
-    const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
+    // Emailed to the user, so use the public HTTPS domain rather than the
+    // CORS origin in FRONTEND_URL (localhost:3000 / VPS :3000 in production).
+    const resetUrl = getPublicUrl(`/reset-password?token=${token}`);
 
     // Send the reset link best-effort: never await SMTP (a slow/hung mail
     // server must not delay the auth response) and never fail the request on
@@ -1269,7 +1272,7 @@ async function startReportProduction(
         recipient,
         practitioner?.practitionerProfile?.fullName || 'Practitioner',
         report.caseReference,
-        `${FRONTEND_URL}/portal`
+        getPublicUrl('/portal')
       );
       if (approvalEmail.success) {
         console.log(
@@ -1997,6 +2000,7 @@ app.listen(PORT, () => {
   console.log(`[QEEG.com.au Backend] Server listening on port ${PORT}`);
   console.log(`[Region] ap-southeast-2 (Sydney, Australia Sovereign)`);
   console.log(`[CORS Allowed Origin] ${FRONTEND_URL}`);
+  console.log(`[Public Link Base URL] ${getPublicBaseUrl()} (used for all emailed links)`);
   console.log(`[Healthcheck URL] http://localhost:${PORT}/health`);
   console.log('====================================================');
 

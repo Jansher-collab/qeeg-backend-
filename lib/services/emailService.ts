@@ -1,7 +1,14 @@
 ﻿import * as postmark from 'postmark';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-const APP_BASE_URL = process.env.APP_BASE_URL || 'https://qeeg.com.au';
+import { getPublicBaseUrl } from '../config/publicUrl';
+
+// Email buttons link to the public HTTPS domain, which is resolved LAZILY at
+// template-build time (same rationale as getEmailConfig below: a module-scope
+// capture silently locked in a stale/default origin when this module was
+// imported before dotenv/config had populated process.env).
+// FRONTEND_URL is deliberately NOT used here — it is the CORS origin
+// (localhost:3000 in dev, http://vps.qeeg.com.au:3000 in production) and would
+// ship internal, non-canonical, plain-HTTP links to real practitioners.
 
 // Outbound email is delivered exclusively through Postmark. There is no
 // Nodemailer / SMTP / SES fallback. A missing token is surfaced as an error
@@ -174,7 +181,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string, ipAddr
           <p>Your account is fully set up and you can now start securely uploading EEG files for correlation and analysis.</p>
           <p style="font-size: 13px; color: #64748b;">Registered from IP: ${ipAddress}</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${FRONTEND_URL}/portal" class="btn">Go to Dashboard</a>
+            <a href="${getPublicBaseUrl()}/portal" class="btn">Go to Dashboard</a>
           </div>
           <p>If you have any questions, feel free to reply directly to this email.</p>
           <div class="footer">
@@ -189,7 +196,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string, ipAddr
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Welcome ${username}! You can now access your dashboard at ${FRONTEND_URL}/portal. Registered from IP: ${ipAddress}`,
+    text: `Welcome ${username}! You can now access your dashboard at ${getPublicBaseUrl()}/portal. Registered from IP: ${ipAddress}`,
   });
 }
 
@@ -265,7 +272,7 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
           <p>This is a confirmation that the password for your QEEG.com.au account was successfully updated.</p>
           <p>If you made this change, no further action is required. You can log in to your account with your new credentials.</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${FRONTEND_URL}/login" class="btn">Go to Login</a>
+            <a href="${getPublicBaseUrl()}/login" class="btn">Go to Login</a>
           </div>
           <p style="font-size: 13px; color: #64748b;">If you did not make this change, please immediately reply to this email to secure your account.</p>
           <div class="footer">
@@ -547,7 +554,7 @@ export async function sendRetentionUpdateNotification(
           <p style="font-size: 13px; color: #64748b;">${pendingLine}</p>
 
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${FRONTEND_URL}/portal" class="btn">Go to Dashboard &rarr;</a>
+            <a href="${getPublicBaseUrl()}/portal" class="btn">Go to Dashboard &rarr;</a>
           </div>
 
           <p style="font-size: 13px; color: #64748b;">
@@ -566,7 +573,7 @@ export async function sendRetentionUpdateNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Our report retention settings were updated. Completed reports are now available for download for ${retentionDays} ${dayLabel}; any report not downloaded within that period will be automatically and permanently deleted from our servers. ${pendingCaseCount && pendingCaseCount > 0 ? `You currently have ${pendingCaseCount} report(s) awaiting download.` : ''} Please download and securely store your pending reports. View your dashboard at ${FRONTEND_URL}/portal.`,
+    text: `Our report retention settings were updated. Completed reports are now available for download for ${retentionDays} ${dayLabel}; any report not downloaded within that period will be automatically and permanently deleted from our servers. ${pendingCaseCount && pendingCaseCount > 0 ? `You currently have ${pendingCaseCount} report(s) awaiting download.` : ''} Please download and securely store your pending reports. View your dashboard at ${getPublicBaseUrl()}/portal.`,
   });
 }
 

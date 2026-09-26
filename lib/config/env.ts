@@ -1,5 +1,7 @@
 import 'dotenv/config';
 
+import { getPublicBaseUrlProblem } from './publicUrl';
+
 export type EnvIssueLevel = 'error' | 'warn';
 
 export interface EnvIssue {
@@ -109,6 +111,22 @@ export function validateEnvironment(env: NodeJS.ProcessEnv = process.env): EnvIs
       level: 'warn',
       key: 'FROM_EMAIL',
       message: "Not set — falling back to 'admin@qeeg.com.au'. Use a Postmark-verified sender address.",
+    });
+  }
+
+  // Links that leave the system (email buttons, one-time report collection,
+  // password reset) must resolve to the public HTTPS domain, never to the
+  // browser CORS origin in FRONTEND_URL (localhost:3000 in dev, the VPS :3000
+  // origin in production). See lib/config/publicUrl.ts.
+  const publicUrlProblem = getPublicBaseUrlProblem(env);
+  if (publicUrlProblem) {
+    // A missing APP_BASE_URL only falls back to the correct production default,
+    // so it stays a warning; a wrong value is fatal in production.
+    const isFallbackOnly = isBlank(env.APP_BASE_URL);
+    issues.push({
+      level: isProduction && !isFallbackOnly ? 'error' : 'warn',
+      key: 'APP_BASE_URL',
+      message: publicUrlProblem,
     });
   }
 

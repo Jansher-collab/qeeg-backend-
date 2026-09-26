@@ -60,8 +60,11 @@ export async function generatePreFilledChecklistPDF(
       color: rgb(1, 1, 1),
     });
 
+    // Position the section title from the measured brand width so it can never
+    // overlap "QEEG.COM.AU" (which rendered to x=141.25 at 13pt bold).
+    const brandRight = 48 + fontBold.widthOfTextAtSize('QEEG.COM.AU', 13);
     page.drawText(`  |  ${title.toUpperCase()}`, {
-      x: 140,
+      x: brandRight + 14,
       y: height - 56,
       size: 10,
       font: fontBold,
