@@ -255,6 +255,7 @@ app.post('/api/auth/signup', authRateLimit, async (req: Request, res: Response) 
       notificationEmail,
       role = 'PRACTITIONER',
       legalAcceptances,
+      timeZone,
     } = req.body;
 
     if (!email || !password) {
@@ -312,7 +313,8 @@ app.post('/api/auth/signup', authRateLimit, async (req: Request, res: Response) 
     sendWelcomeEmail(
       newUser.email,
       newUser.practitionerProfile?.fullName || newUser.email,
-      req.ip || '127.0.0.1'
+      req.ip || '127.0.0.1',
+      req.body.timeZone
     )
       .then((emailResult) => {
         if (!emailResult.success) {
@@ -392,7 +394,7 @@ app.post('/api/auth/signup/pending', authRateLimit, async (req: Request, res: Re
  */
 app.post('/api/auth/signup/complete', sensitiveAuthRateLimit, async (req: Request, res: Response) => {
   try {
-    const { pendingId, totpCode } = req.body || {};
+    const { pendingId, totpCode, timeZone } = req.body || {};
 
     const result = await completePendingRegistration({ pendingId, totpCode });
 
@@ -420,7 +422,8 @@ app.post('/api/auth/signup/complete', sensitiveAuthRateLimit, async (req: Reques
     sendWelcomeEmail(
       newUser.email,
       newUser.practitionerProfile?.fullName || newUser.email,
-      req.ip || '127.0.0.1'
+      req.ip || '127.0.0.1',
+      req.body.timeZone
     )
       .then((emailResult) => {
         if (!emailResult.success) {
@@ -462,7 +465,7 @@ app.post('/api/auth/signup/complete', sensitiveAuthRateLimit, async (req: Reques
 
 app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) => {
   try {
-    const { email, password, totpCode } = req.body;
+    const { email, password, totpCode, timeZone } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
@@ -535,7 +538,8 @@ app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) =
       user.email,
       user.practitionerProfile?.fullName || user.email,
       req.ip || '127.0.0.1',
-      loginOccurredAt
+      loginOccurredAt,
+      timeZone
     )
       .then((emailResult) => {
         if (!emailResult.success) {
@@ -742,7 +746,7 @@ app.get('/api/auth/2fa/status', authenticateUser, async (req: Request, res: Resp
 
 app.post('/api/auth/forgot-password', sensitiveAuthRateLimit, async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
+    const { email, timeZone } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
     }
@@ -762,7 +766,7 @@ app.post('/api/auth/forgot-password', sensitiveAuthRateLimit, async (req: Reques
     // server must not delay the auth response) and never fail the request on
     // a send error. Failures are logged clearly for ops follow-up and the
     // generic anti-enumeration message is always returned.
-    sendPasswordResetEmail(user.email, resetUrl)
+    sendPasswordResetEmail(user.email, resetUrl, timeZone)
       .then((emailResult) => {
         if (!emailResult.success) {
           console.error(
@@ -781,7 +785,7 @@ app.post('/api/auth/forgot-password', sensitiveAuthRateLimit, async (req: Reques
 
 app.post('/api/auth/reset-password', sensitiveAuthRateLimit, async (req: Request, res: Response) => {
   try {
-    const { token, newPassword } = req.body;
+    const { token, newPassword, timeZone } = req.body;
     if (!token || !newPassword) {
       return res.status(400).json({ error: 'Token and new password are required' });
     }
@@ -815,10 +819,11 @@ app.post('/api/auth/reset-password', sensitiveAuthRateLimit, async (req: Request
     if (user) {
       // Confirm best-effort and non-blocking: the reset has already been
       // applied above; a confirmation-email failure must not fail the request.
-      sendPasswordResetConfirmationEmail(
-        user.email,
-        user.practitionerProfile?.fullName || user.email
-      )
+sendPasswordResetConfirmationEmail(
+  user.email,
+  user.practitionerProfile?.fullName || user.email,
+  timeZone
+  )
         .then((emailResult) => {
           if (!emailResult.success) {
             console.error(

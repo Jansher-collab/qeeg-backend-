@@ -1,7 +1,7 @@
 import * as postmark from 'postmark';
 
 import { getPublicBaseUrl } from '../config/publicUrl';
-import { APP_TIME_ZONE, formatLocalDateTime, formatLocalTimestamp } from '../utils/dateTime';
+import { normalizeTimeZone, formatLocalDateTime, formatLocalTimestamp } from '../utils/dateTime';
 
 // Email buttons link to the public HTTPS domain, which is resolved LAZILY at
 // template-build time (same rationale as getEmailConfig below: a module-scope
@@ -156,7 +156,12 @@ export async function checkEmailConnectivity(): Promise<EmailSendResult> {
 // Auth Notification Emails
 // ----------------------------------------------------
 
-export async function sendWelcomeEmail(toEmail: string, username: string, ipAddress: string) {
+export async function sendWelcomeEmail(
+  toEmail: string,
+  username: string,
+  ipAddress: string,
+  timeZone?: string | null
+) {
   const subject = `Welcome to QEEG.com.au, ${username}!`;
   const htmlBody = `
     <!DOCTYPE html>
@@ -188,7 +193,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string, ipAddr
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -199,11 +204,15 @@ export async function sendWelcomeEmail(toEmail: string, username: string, ipAddr
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Welcome ${username}! You can now access your dashboard at ${getPublicBaseUrl()}/portal. Registered from IP: ${ipAddress} ${formatLocalTimestamp()}`,
+    text: `Welcome ${username}! You can now access your dashboard at ${getPublicBaseUrl()}/portal. Registered from IP: ${ipAddress} ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
-export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) {
+export async function sendPasswordResetEmail(
+  toEmail: string,
+  resetUrl: string,
+  timeZone?: string | null
+) {
   const subject = `[QEEG.com.au] Password Reset Request`;
   const htmlBody = `
     <!DOCTYPE html>
@@ -233,7 +242,7 @@ export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) 
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -244,11 +253,15 @@ export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) 
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `To reset your password, visit: ${resetUrl} ${formatLocalTimestamp()}`,
+    text: `To reset your password, visit: ${resetUrl} ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
-export async function sendPasswordResetConfirmationEmail(toEmail: string, username: string) {
+export async function sendPasswordResetConfirmationEmail(
+  toEmail: string,
+  username: string,
+  timeZone?: string | null
+) {
   const subject = `[QEEG.com.au] Your password has been updated`;
   const htmlBody = `
     <!DOCTYPE html>
@@ -283,7 +296,7 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -294,7 +307,7 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your password has been updated. If this wasn't you, secure your account immediately. ${formatLocalTimestamp()}`,
+    text: `Your password has been updated. If this wasn't you, secure your account immediately. ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
@@ -302,7 +315,8 @@ export async function sendLoginAlertEmail(
   toEmail: string,
   username: string,
   ipAddress: string,
-  occurredAt: Date = new Date()
+  occurredAt: Date = new Date(),
+  timeZone?: string | null
 ) {
   const subject = `[Security Alert] New Login to your QEEG Account`;
   const htmlBody = `
@@ -331,13 +345,13 @@ export async function sendLoginAlertEmail(
           <p>Hi ${username},</p>
           <p>We noticed a new login to your QEEG.com.au account.</p>
           <p><strong>IP Address:</strong> ${ipAddress}</p>
-          <p><strong>Time:</strong> ${formatLocalDateTime(occurredAt)} (${APP_TIME_ZONE})</p>
+          <p><strong>Time:</strong> ${formatLocalDateTime(occurredAt, timeZone)} (${normalizeTimeZone(timeZone)})</p>
           <p>If this was you, you can safely ignore this email.</p>
           <p style="font-size: 13px; color: #64748b; margin-top: 20px;">If you did not make this login, please immediately secure your account and reply to this email.</p>
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -348,7 +362,7 @@ export async function sendLoginAlertEmail(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `New login detected from IP: ${ipAddress}. If this wasn't you, secure your account immediately. ${formatLocalTimestamp()}`,
+    text: `New login detected from IP: ${ipAddress}. If this wasn't you, secure your account immediately. ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
@@ -360,7 +374,8 @@ export async function sendReportReadyNotification(
   toEmail: string,
   practitionerName: string,
   caseReference: string,
-  downloadUrl: string
+  downloadUrl: string,
+  timeZone?: string | null
 ): Promise<EmailSendResult> {
   const subject = `[QEEG.com.au] Report Ready for Download - Case ${caseReference}`;
   const htmlBody = `
@@ -398,7 +413,7 @@ export async function sendReportReadyNotification(
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -409,14 +424,15 @@ return sendEmail({
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your QEEG correlation report for case ${caseReference} is ready for download at ${downloadUrl}. ${formatLocalTimestamp()}`,
+    text: `Your QEEG correlation report for case ${caseReference} is ready for download at ${downloadUrl}. ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
 export async function sendAdminRejectionNotification(
   toEmail: string,
   practitionerName: string,
-  caseReference: string
+  caseReference: string,
+  timeZone?: string | null
 ): Promise<EmailSendResult> {
   const subject = `[QEEG.com.au] Case Declined - Authorization Voided for ${caseReference}`;
   const htmlBody = `
@@ -454,7 +470,7 @@ export async function sendAdminRejectionNotification(
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -465,7 +481,7 @@ export async function sendAdminRejectionNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your QEEG correlation report for case ${caseReference} was declined. Your $65 AUD payment hold has been voided. ${formatLocalTimestamp()}`,
+    text: `Your QEEG correlation report for case ${caseReference} was declined. Your $65 AUD payment hold has been voided. ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
@@ -473,7 +489,8 @@ export async function sendAdminApprovalNotification(
   toEmail: string,
   practitionerName: string,
   caseReference: string,
-  dashboardUrl: string
+  dashboardUrl: string,
+  timeZone?: string | null
 ): Promise<EmailSendResult> {
   const subject = `[QEEG.com.au] Case Approved & Processing - ${caseReference}`;
   const htmlBody = `
@@ -509,7 +526,7 @@ export async function sendAdminApprovalNotification(
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -520,7 +537,7 @@ export async function sendAdminApprovalNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your case ${caseReference} has been approved and is now being processed. Your $65.00 AUD payment has been captured. You will receive a separate email with a secure download link once the report is ready. View your dashboard at ${dashboardUrl} ${formatLocalTimestamp()}`,
+    text: `Your case ${caseReference} has been approved and is now being processed. Your $65.00 AUD payment has been captured. You will receive a separate email with a secure download link once the report is ready. View your dashboard at ${dashboardUrl} ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
@@ -534,7 +551,8 @@ export async function sendRetentionUpdateNotification(
   toEmail: string,
   practitionerName: string,
   retentionDays: number,
-  pendingCaseCount?: number
+  pendingCaseCount?: number,
+  timeZone?: string | null
 ): Promise<EmailSendResult> {
   const dayLabel = retentionDays === 1 ? 'day' : 'days';
   const pendingLine =
@@ -584,7 +602,7 @@ export async function sendRetentionUpdateNotification(
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -595,7 +613,7 @@ export async function sendRetentionUpdateNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Our report retention settings were updated. Completed reports are now available for download for ${retentionDays} ${dayLabel}; any report not downloaded within that period will be automatically and permanently deleted from our servers. ${pendingCaseCount && pendingCaseCount > 0 ? `You currently have ${pendingCaseCount} report(s) awaiting download.` : ''} Please download and securely store your pending reports. View your dashboard at ${getPublicBaseUrl()}/portal. ${formatLocalTimestamp()}`,
+    text: `Our report retention settings were updated. Completed reports are now available for download for ${retentionDays} ${dayLabel}; any report not downloaded within that period will be automatically and permanently deleted from our servers. ${pendingCaseCount && pendingCaseCount > 0 ? `You currently have ${pendingCaseCount} report(s) awaiting download.` : ''} Please download and securely store your pending reports. View your dashboard at ${getPublicBaseUrl()}/portal. ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
@@ -611,7 +629,8 @@ export async function sendReportAutoReminderNotification(
   caseReference: string,
   retentionDays: number,
   remainingDays: number,
-  dashboardUrl: string
+  dashboardUrl: string,
+  timeZone?: string | null
 ): Promise<EmailSendResult> {
   const dayLabel = retentionDays === 1 ? 'day' : 'days';
   const remainingLabel =
@@ -662,7 +681,7 @@ export async function sendReportAutoReminderNotification(
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
             <br />
-            <span>${formatLocalTimestamp()}</span>
+            <span>${formatLocalTimestamp(new Date(), timeZone)}</span>
           </div>
         </div>
       </body>
@@ -673,7 +692,7 @@ export async function sendReportAutoReminderNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Reminder: report for case ${caseReference} is still awaiting download. It will be retained for ${retentionDays} ${dayLabel} in total; approximately ${remainingLabel} remain before it is automatically and permanently deleted from our servers. Please download it to your secure practice records before the window expires. View your dashboard at ${dashboardUrl}. ${formatLocalTimestamp()}`,
+    text: `Reminder: report for case ${caseReference} is still awaiting download. It will be retained for ${retentionDays} ${dayLabel} in total; approximately ${remainingLabel} remain before it is automatically and permanently deleted from our servers. Please download it to your secure practice records before the window expires. View your dashboard at ${dashboardUrl}. ${formatLocalTimestamp(new Date(), timeZone)}`,
   });
 }
 
