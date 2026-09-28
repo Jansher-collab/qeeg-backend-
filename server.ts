@@ -24,6 +24,11 @@ import {
   verifyAndConsumeBackupCode,
   countUnusedBackupCodes,
 } from './lib/services/authService';
+import {
+  stagePendingRegistration,
+  completePendingRegistration,
+  createPractitionerAccount,
+} from './lib/services/pendingRegistration';
 import { authRateLimit, sensitiveAuthRateLimit, submitRateLimit } from './lib/services/rateLimit';
 import { verifyIngestionPayload } from './lib/services/reliabilityParser';
 import { generateCaseReference, normalizeCaseReference, isCaseReferenceConflict } from './lib/services/caseReference';
@@ -270,55 +275,24 @@ app.post('/api/auth/signup', authRateLimit, async (req: Request, res: Response) 
     const passwordHash = await hashPassword(password);
     const assignedRole = role === 'NEUROSCIENTIST' ? UserRole.NEUROSCIENTIST : UserRole.PRACTITIONER;
 
-    const resolvedProfession = professionType?.trim() || profession?.trim() || null;
-    const resolvedClinic = practiceName?.trim() || clinicName?.trim() || null;
-    const resolvedPhone = practicePhone?.trim() || phone?.trim() || null;
-
-    const newUser = await prisma.user.create({
-      data: {
-        email: email.toLowerCase().trim(),
-        passwordHash,
-        role: assignedRole,
-        practitionerProfile: {
-          create: {
-            fullName: fullName?.trim() || null,
-            professionalTitle: professionalTitle?.trim() || null,
-            professionType: resolvedProfession,
-            profession: resolvedProfession,
-            providerNumber: providerNumber?.trim() || null,
-            practiceName: resolvedClinic,
-            clinicName: resolvedClinic,
-            practiceAddress: practiceAddress?.trim() || null,
-            practicePhone: resolvedPhone,
-            phone: resolvedPhone,
-            practiceEmail: practiceEmail?.trim() || email.toLowerCase().trim(),
-            notificationEmail: notificationEmail?.trim() || email.toLowerCase().trim(),
-          },
-        },
-      },
-      include: { practitionerProfile: true },
+    const newUser = await createPractitionerAccount({
+      email: email.toLowerCase().trim(),
+      passwordHash,
+      role: assignedRole,
+      fullName,
+      professionalTitle,
+      professionType,
+      profession,
+      providerNumber,
+      practiceName,
+      clinicName,
+      practiceAddress,
+      practicePhone,
+      phone,
+      practiceEmail,
+      notificationEmail,
+      legalAcceptances: Array.isArray(legalAcceptances) ? legalAcceptances : [],
     });
-
-    // Mandatory DPA/EULA acceptance (Spec 3.1c/3.1d). Records are created for
-    // every signed acceptance so compliance can be proven per practitioner.
-    if (Array.isArray(legalAcceptances) && legalAcceptances.length > 0) {
-      const acceptedTypes = new Set<string>();
-      await prisma.$transaction(
-        legalAcceptances
-          .filter((acc: any) => acc && typeof acc.type === 'string' && !acceptedTypes.has(acc.type))
-          .map((acc: any) => {
-            acceptedTypes.add(acc.type);
-            return prisma.legalAcceptance.create({
-              data: {
-                userId: newUser.id,
-                acceptanceType: acc.type,
-                version: typeof acc.version === 'string' ? acc.version : String(acc.version ?? ''),
-                acceptedAt: new Date(),
-              },
-            });
-          })
-      );
-    }
 
     await logActivity({
       userId: newUser.id,
@@ -372,6 +346,117 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
     return signupHandler.handle(req, res);
   }
   res.status(404).json({ error: 'Endpoint not found.' });
+});
+
+// ----------------------------------------------------
+// Deferred signup (mandatory 2FA before an account exists)
+// ----------------------------------------------------
+
+/**
+ * Step 1 of practitioner registration.
+ *
+ * Validates the submitted details, hashes the password and mints a TOTP
+ * secret, but deliberately does NOT create any database record. The caller
+ * receives an otpauth URL (rendered as a QR code) plus an opaque pendingId.
+ */
+app.post('/api/auth/signup/pending', authRateLimit, async (req: Request, res: Response) => {
+  try {
+    const result = await stagePendingRegistration(req.body || {});
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    res.status(200).json({
+      message:
+        'Details received. Scan the QR code with your authenticator app to finish creating your account.',
+      pendingId: result.pendingId,
+      otpauthUrl: result.otpauthUrl,
+      email: result.email,
+      expiresInSeconds: result.expiresInSeconds,
+    });
+  } catch (error: any) {
+    console.error('[Auth] Failed to stage pending registration:', error);
+    res.status(500).json({ error: 'Could not start registration. Please try again.' });
+  }
+});
+
+/**
+ * Step 2 of practitioner registration.
+ *
+ * Verifies the TOTP code and — only on success — atomically creates the user,
+ * practitioner profile, legal acceptances, the enabled 2FA secret and the 10
+ * backup codes, then issues a session so the practitioner lands straight in
+ * the portal. A wrong/expired code creates nothing.
+ */
+app.post('/api/auth/signup/complete', sensitiveAuthRateLimit, async (req: Request, res: Response) => {
+  try {
+    const { pendingId, totpCode } = req.body || {};
+
+    const result = await completePendingRegistration({ pendingId, totpCode });
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error, restartRequired: result.discard });
+    }
+
+    const newUser = result.user;
+
+    await logActivity({
+      userId: newUser.id,
+      action: 'PRACTITIONER_REGISTERED',
+      details: { role: newUser.role, clinicName: newUser.practitionerProfile?.clinicName },
+      ipAddress: req.ip || '127.0.0.1',
+    });
+
+    console.log('\n======================================================');
+    console.log(`[PostgreSQL DB] 👤 User Registered (2FA verified): ${newUser.email} (ID: ${newUser.id})`);
+    console.log(`[PostgreSQL DB] 🏥 Profile Linked: ${newUser.practitionerProfile?.fullName || 'N/A'} - ${newUser.practitionerProfile?.clinicName || 'N/A'}`);
+    console.log(`[PostgreSQL DB] 🔐 2FA enabled, ${result.backupCodes.length} backup codes issued`);
+    console.log('======================================================\n');
+
+    // Send Welcome Email best-effort: an SMTP failure/timeout must never
+    // block or fail the signup response, but the failure is logged clearly.
+    sendWelcomeEmail(
+      newUser.email,
+      newUser.practitionerProfile?.fullName || newUser.email,
+      req.ip || '127.0.0.1'
+    )
+      .then((emailResult) => {
+        if (!emailResult.success) {
+          console.error(
+            `[AuthEmail] Welcome email FAILED for ${newUser.email}: ${emailResult.error || 'unknown SMTP error'}`
+          );
+        }
+      })
+      .catch((e) => console.error('Failed to send welcome email:', e));
+
+    // 2FA is already active, so no challenge code is needed here: issue the
+    // session directly and hand the user their one-time backup codes.
+    const token = generateToken({
+      userId: newUser.id,
+      email: newUser.email,
+      role: newUser.role,
+      tokenVersion: newUser.tokenVersion,
+    });
+
+    const cookieOpts = getSessionCookieOptions();
+    res.cookie(cookieOpts.name, token, cookieOpts);
+
+    res.status(201).json({
+      message: 'Account created. Two-factor authentication is active.',
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        role: newUser.role,
+        twoFactorEnabled: true,
+        practitionerProfile: newUser.practitionerProfile,
+      },
+      backupCodes: result.backupCodes,
+    });
+  } catch (error: any) {
+    console.error('[PostgreSQL DB ERROR] Signup completion error:', error);
+    res.status(500).json({ error: error.message || 'Failed to create account.' });
+  }
 });
 
 app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) => {
