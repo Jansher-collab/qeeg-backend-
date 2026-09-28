@@ -31,6 +31,7 @@ import {
 } from './lib/services/pendingRegistration';
 import { authRateLimit, sensitiveAuthRateLimit, submitRateLimit } from './lib/services/rateLimit';
 import { verifyIngestionPayload } from './lib/services/reliabilityParser';
+import { verifyTovaData } from './lib/services/tovaValidator';
 import { generateCaseReference, normalizeCaseReference, isCaseReferenceConflict } from './lib/services/caseReference';
 import { validateEnvironment, reportEnvironmentIssues } from './lib/config/env';
 import { getPublicBaseUrl, getPublicUrl } from './lib/config/publicUrl';
@@ -527,10 +528,14 @@ app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) =
 
     // Login alert email is best-effort and must never block the auth response;
     // delivery failures are logged but the session proceeds regardless.
+    // The login instant is captured here so the email reports when the login
+    // actually occurred rather than whenever Postmark managed to deliver.
+    const loginOccurredAt = new Date();
     sendLoginAlertEmail(
       user.email,
       user.practitionerProfile?.fullName || user.email,
-      req.ip || '127.0.0.1'
+      req.ip || '127.0.0.1',
+      loginOccurredAt
     )
       .then((emailResult) => {
         if (!emailResult.success) {
@@ -1222,7 +1227,27 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
       });
     }
 
-    // 3. Create Report in Database, then run the automated post-payment
+    // 3. Server-Side TOVA Quality Gate. TOVA supporting-test data is a
+    // mandatory part of the request (the client blocks the checklist step until
+    // a TOVA file is uploaded and verified), so it is re-validated here
+    // independently of the client. A missing or malformed payload is rejected
+    // and the authorised payment is voided, exactly as for a reliability
+    // failure, so an invalid submission can never be persisted.
+    const tovaVerification = verifyTovaData(payload.tovaData);
+    if (!tovaVerification.passed) {
+      console.warn(
+        `[Submit] Rejected case ${payload.caseReference ?? '(malformed)'} (user ${user.id}): ${tovaVerification.rejectionReason}`
+      );
+      if (authId && !authId.startsWith('AUTH-MOCK-')) {
+        await voidPayment(authId);
+      }
+      return res.status(400).json({
+        error: tovaVerification.rejectionReason || 'TOVA supporting-test data is required.',
+        errorCode: tovaVerification.errorCode || 'TOVA_REQUIRED',
+      });
+    }
+
+    // 4. Create Report in Database, then run the automated post-payment
     // pipeline (formerly the manual PENDING_ADMIN_APPROVAL gate). The report is
     // placed in PAYMENT_AUTHORISED (funds held at PayPal) and generation is
     // kicked off immediately — no admin intervention is required.
@@ -1250,7 +1275,10 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
             age: payload.age ?? verification.age ?? null,
             gender: payload.gender ?? verification.gender ?? null,
             handedness: payload.handedness ?? verification.handedness ?? null,
-            tovaData: payload.tovaData ? JSON.parse(JSON.stringify(payload.tovaData)) : undefined,
+            // TOVA is mandatory and already validated above, so it is always
+            // persisted (deep-cloned to strip any prototype chain) rather than
+            // being conditionally attached as optional data.
+            tovaData: JSON.parse(JSON.stringify(payload.tovaData)),
             checklistData: payload.checklistData ? JSON.parse(JSON.stringify(payload.checklistData)) : undefined,
             feeAmount: reportFee,
             paypalAuthorizationId: authId,

@@ -1,12 +1,13 @@
-﻿import * as postmark from 'postmark';
+import * as postmark from 'postmark';
 
 import { getPublicBaseUrl } from '../config/publicUrl';
+import { APP_TIME_ZONE, formatLocalDateTime, formatLocalTimestamp } from '../utils/dateTime';
 
 // Email buttons link to the public HTTPS domain, which is resolved LAZILY at
 // template-build time (same rationale as getEmailConfig below: a module-scope
 // capture silently locked in a stale/default origin when this module was
 // imported before dotenv/config had populated process.env).
-// FRONTEND_URL is deliberately NOT used here — it is the CORS origin
+// FRONTEND_URL is deliberately NOT used here � it is the CORS origin
 // (localhost:3000 in dev, http://vps.qeeg.com.au:3000 in production) and would
 // ship internal, non-canonical, plain-HTTP links to real practitioners.
 
@@ -15,7 +16,7 @@ import { getPublicBaseUrl } from '../config/publicUrl';
 // in production (see lib/config/env.ts) and as a logged simulation in
 // development so local runs still work without credentials.
 //
-// The credentials are read LAZILY at send time — never at module load. Capturing
+// The credentials are read LAZILY at send time � never at module load. Capturing
 // them as module-scope constants (as a previous version did) silently switched
 // all outbound mail into "logged only" mode whenever this module was imported
 // before dotenv/config had populated process.env (e.g. one-off scripts/tests),
@@ -35,7 +36,7 @@ let postmarkClientToken = '';
 function getPostmarkClient(): postmark.ServerClient {
   const { serverToken } = getEmailConfig();
   if (!serverToken) {
-    throw new Error('POSTMARK_SERVER_TOKEN is not set — outbound email cannot be sent.');
+    throw new Error('POSTMARK_SERVER_TOKEN is not set � outbound email cannot be sent.');
   }
   // Re-create the client if the token changed between calls (env loaded late or
   // swapped at runtime), so a stale client never silently uses a bad token.
@@ -89,7 +90,7 @@ async function sendEmail({
     // Extend the diagnostic value of every failure: log the HTTP status, the
     // Postmark API error code, AND the underlying fetch cause (e.g. DNS
     // failure "getaddrinfo EAI_AGAIN" or TLS error). A bare "fetch failed" is
-    // useless for support — include the real reason in the returned error too.
+    // useless for support � include the real reason in the returned error too.
     const { fromEmail } = getEmailConfig();
     const reason = error instanceof Error ? error.message : 'Unknown email error';
     const status = (error as any)?.status ?? (error as any)?.statusCode;
@@ -108,7 +109,7 @@ async function sendEmail({
     ].filter(Boolean).join(' ');
     const detailLine = details ? `${reason} (${details})` : reason;
     console.error(
-      `[Email Error (postmark)] to=${to} from=${fromEmail} subject="${subject}" — ${detailLine}`
+      `[Email Error (postmark)] to=${to} from=${fromEmail} subject="${subject}" � ${detailLine}`
     );
     return { success: false, error: detailLine };
   }
@@ -123,13 +124,13 @@ async function sendEmail({
 export async function checkEmailConnectivity(): Promise<EmailSendResult> {
   const { serverToken, fromEmail, messageStream } = getEmailConfig();
   if (!serverToken) {
-    console.warn('[Email] POSTMARK_SERVER_TOKEN not set — outbound email is DISABLED (messages logged only).');
+    console.warn('[Email] POSTMARK_SERVER_TOKEN not set � outbound email is DISABLED (messages logged only).');
     return { success: false, error: 'POSTMARK_SERVER_TOKEN is not set.' };
   }
   try {
     const server = await getPostmarkClient().getServer();
     console.log(
-      `[Email] Postmark reachable — server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${messageStream}).`
+      `[Email] Postmark reachable � server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${messageStream}).`
     );
     return { success: true };
   } catch (error) {
@@ -144,7 +145,7 @@ export async function checkEmailConnectivity(): Promise<EmailSendResult> {
     const status = (error as any)?.status ?? (error as any)?.statusCode;
     const detailLine = [status !== undefined ? `http=${status}` : undefined, cause].filter(Boolean).join(' ');
     console.error(
-      `[Email] Postmark connectivity check FAILED — ${reason}${detailLine ? ` (${detailLine})` : ''}. ` +
+      `[Email] Postmark connectivity check FAILED � ${reason}${detailLine ? ` (${detailLine})` : ''}. ` +
         'Registration/login/approval emails will NOT be delivered until this is resolved.'
     );
     return { success: false, error: detailLine ? `${reason} (${detailLine})` : reason };
@@ -186,6 +187,8 @@ export async function sendWelcomeEmail(toEmail: string, username: string, ipAddr
           <p>If you have any questions, feel free to reply directly to this email.</p>
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -196,7 +199,7 @@ export async function sendWelcomeEmail(toEmail: string, username: string, ipAddr
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Welcome ${username}! You can now access your dashboard at ${getPublicBaseUrl()}/portal. Registered from IP: ${ipAddress}`,
+    text: `Welcome ${username}! You can now access your dashboard at ${getPublicBaseUrl()}/portal. Registered from IP: ${ipAddress} ${formatLocalTimestamp()}`,
   });
 }
 
@@ -229,6 +232,8 @@ export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) 
           <p style="font-size: 13px; color: #64748b;">This link will expire in 1 hour. If you did not make this request, you can safely ignore this email.</p>
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -239,7 +244,7 @@ export async function sendPasswordResetEmail(toEmail: string, resetUrl: string) 
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `To reset your password, visit: ${resetUrl}`,
+    text: `To reset your password, visit: ${resetUrl} ${formatLocalTimestamp()}`,
   });
 }
 
@@ -277,6 +282,8 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
           <p style="font-size: 13px; color: #64748b;">If you did not make this change, please immediately reply to this email to secure your account.</p>
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -287,11 +294,16 @@ export async function sendPasswordResetConfirmationEmail(toEmail: string, userna
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your password has been updated. If this wasn't you, secure your account immediately.`,
+    text: `Your password has been updated. If this wasn't you, secure your account immediately. ${formatLocalTimestamp()}`,
   });
 }
 
-export async function sendLoginAlertEmail(toEmail: string, username: string, ipAddress: string) {
+export async function sendLoginAlertEmail(
+  toEmail: string,
+  username: string,
+  ipAddress: string,
+  occurredAt: Date = new Date()
+) {
   const subject = `[Security Alert] New Login to your QEEG Account`;
   const htmlBody = `
     <!DOCTYPE html>
@@ -319,11 +331,13 @@ export async function sendLoginAlertEmail(toEmail: string, username: string, ipA
           <p>Hi ${username},</p>
           <p>We noticed a new login to your QEEG.com.au account.</p>
           <p><strong>IP Address:</strong> ${ipAddress}</p>
-          <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+          <p><strong>Time:</strong> ${formatLocalDateTime(occurredAt)} (${APP_TIME_ZONE})</p>
           <p>If this was you, you can safely ignore this email.</p>
           <p style="font-size: 13px; color: #64748b; margin-top: 20px;">If you did not make this login, please immediately secure your account and reply to this email.</p>
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -334,7 +348,7 @@ export async function sendLoginAlertEmail(toEmail: string, username: string, ipA
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `New login detected from IP: ${ipAddress}. If this wasn't you, secure your account immediately.`,
+    text: `New login detected from IP: ${ipAddress}. If this wasn't you, secure your account immediately. ${formatLocalTimestamp()}`,
   });
 }
 
@@ -383,6 +397,8 @@ export async function sendReportReadyNotification(
 
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -393,7 +409,7 @@ return sendEmail({
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your QEEG correlation report for case ${caseReference} is ready for download at ${downloadUrl}.`,
+    text: `Your QEEG correlation report for case ${caseReference} is ready for download at ${downloadUrl}. ${formatLocalTimestamp()}`,
   });
 }
 
@@ -437,6 +453,8 @@ export async function sendAdminRejectionNotification(
 
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -447,7 +465,7 @@ export async function sendAdminRejectionNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your QEEG correlation report for case ${caseReference} was declined. Your $65 AUD payment hold has been voided.`,
+    text: `Your QEEG correlation report for case ${caseReference} was declined. Your $65 AUD payment hold has been voided. ${formatLocalTimestamp()}`,
   });
 }
 
@@ -489,7 +507,9 @@ export async function sendAdminApprovalNotification(
             If you have any questions, please contact <a href="mailto:support@qeeg.com.au">support@qeeg.com.au</a>.
           </p>
           <div class="footer">
-            Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 & Health Records Act 2001
+            Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -500,7 +520,7 @@ export async function sendAdminApprovalNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Your case ${caseReference} has been approved and is now being processed. Your $65.00 AUD payment has been captured. You will receive a separate email with a secure download link once the report is ready. View your dashboard at ${dashboardUrl}`,
+    text: `Your case ${caseReference} has been approved and is now being processed. Your $65.00 AUD payment has been captured. You will receive a separate email with a secure download link once the report is ready. View your dashboard at ${dashboardUrl} ${formatLocalTimestamp()}`,
   });
 }
 
@@ -563,6 +583,8 @@ export async function sendRetentionUpdateNotification(
 
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -573,7 +595,7 @@ export async function sendRetentionUpdateNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Our report retention settings were updated. Completed reports are now available for download for ${retentionDays} ${dayLabel}; any report not downloaded within that period will be automatically and permanently deleted from our servers. ${pendingCaseCount && pendingCaseCount > 0 ? `You currently have ${pendingCaseCount} report(s) awaiting download.` : ''} Please download and securely store your pending reports. View your dashboard at ${getPublicBaseUrl()}/portal.`,
+    text: `Our report retention settings were updated. Completed reports are now available for download for ${retentionDays} ${dayLabel}; any report not downloaded within that period will be automatically and permanently deleted from our servers. ${pendingCaseCount && pendingCaseCount > 0 ? `You currently have ${pendingCaseCount} report(s) awaiting download.` : ''} Please download and securely store your pending reports. View your dashboard at ${getPublicBaseUrl()}/portal. ${formatLocalTimestamp()}`,
   });
 }
 
@@ -615,7 +637,7 @@ export async function sendReportAutoReminderNotification(
       <body>
         <div class="card">
           <div class="header">
-            <span class="badge">REMINDER · REPORT PENDING DOWNLOAD</span>
+            <span class="badge">REMINDER � REPORT PENDING DOWNLOAD</span>
             <div class="logo">QEEG.com.au</div>
           </div>
           <p>Dear ${practitionerName || 'Practitioner'},</p>
@@ -639,6 +661,8 @@ export async function sendReportAutoReminderNotification(
 
           <div class="footer">
             Applied Neurosciences Pty Ltd &bull; Sovereign Australian Infrastructure &bull; Privacy Act 1988 &amp; Health Records Act 2001
+            <br />
+            <span>${formatLocalTimestamp()}</span>
           </div>
         </div>
       </body>
@@ -649,7 +673,7 @@ export async function sendReportAutoReminderNotification(
     to: toEmail,
     subject,
     html: htmlBody,
-    text: `Reminder: report for case ${caseReference} is still awaiting download. It will be retained for ${retentionDays} ${dayLabel} in total; approximately ${remainingLabel} remain before it is automatically and permanently deleted from our servers. Please download it to your secure practice records before the window expires. View your dashboard at ${dashboardUrl}.`,
+    text: `Reminder: report for case ${caseReference} is still awaiting download. It will be retained for ${retentionDays} ${dayLabel} in total; approximately ${remainingLabel} remain before it is automatically and permanently deleted from our servers. Please download it to your secure practice records before the window expires. View your dashboard at ${dashboardUrl}. ${formatLocalTimestamp()}`,
   });
 }
 
