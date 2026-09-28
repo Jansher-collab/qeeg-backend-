@@ -45,6 +45,7 @@ import {
   logPayPalCredentialSource,
 } from './lib/services/paypalService';
 import { executePurgeOnDownload } from './lib/services/purgeService';
+import { tryClaim, releaseClaim, claimantKey } from './lib/services/downloadClaims';
 import {
   sendPasswordResetEmail,
   sendPasswordResetConfirmationEmail,
@@ -1542,8 +1543,7 @@ app.get('/api/reports/:id/download', async (req: Request, res: Response) => {
 
     // Strict one-time download rule: only reports that reached COMPLETED may be
     // downloaded (funds captured, output generated) — for every caller,
-    // including admins. Downloading triggers an immediate server purge of the
-    // report content, so allowing an in-flight state through would destroy
+    // including admins. Letting an in-flight state through phase 1 would serve
     // unreleasable data. (No admin-download UI exists; admins oversee in-flight
     // state read-only through the pipeline and history views.)
     if (report.status !== 'COMPLETED') {
@@ -1552,17 +1552,97 @@ app.get('/api/reports/:id/download', async (req: Request, res: Response) => {
       });
     }
 
+    // Two-phase download protocol (phase 1): claim the report so findings are
+    // served to exactly one downloader, and return the findings WITHOUT
+    // purging. The purge is finalised by POST /api/reports/:id/download/complete
+    // only after the client has rendered and saved the PDF — this removes the
+    // race where a server-side purge-on-GET destroyed the report before the
+    // in-browser PDF renderer had finished with it.
+    const claimant = claimantKey(user?.id, token);
+    const claimResult = tryClaim(reportId, claimant);
+    if (claimResult === 'busy') {
+      return res.status(409).json({
+        error: 'Another download of this report is already in progress. Please retry in a few minutes.',
+      });
+    }
+
     // Capture the report content in memory to return to the client.
-    const findings = report.findings || { caseReference: report.caseReference };
-
-    // Trigger the full purge-on-download: wipe database fields (findings,
-    // tovaData, checklistData, reportSummary, filePaths) and delete all files.
-    await executePurgeOnDownload(reportId, user?.id, req.ip);
-
-    res.json(findings);
+    try {
+      const findings = report.findings || { caseReference: report.caseReference };
+      res.json(findings);
+    } catch (error) {
+      releaseClaim(reportId);
+      throw error;
+    }
   } catch (error: any) {
     console.error('Download error:', error);
     res.status(500).json({ error: error.message || 'Download failed.' });
+  }
+});
+
+// Two-phase download protocol (phase 2): the client calls this only after it
+// has rendered the correlation PDF in-browser and triggered the save. At this
+// point the full report content has left the server, so the zero-retention
+// purge is executed. Idempotent: a duplicate completion (or a completion after
+// the backstop sweep) returns 200 instead of erroring, so a lost final
+// response cannot strand the practitioner or the report.
+app.post('/api/reports/:id/download/complete', async (req: Request, res: Response) => {
+  try {
+    const reportId = req.params.id as string;
+    const token =
+      (req.body?.token as string) || (req.query.token as string) || undefined;
+
+    // Authentication mirrors phase 1: session cookie / bearer token, or a
+    // signed collection token for anonymous access links.
+    const sessionToken =
+      req.cookies[getSessionCookieName()] ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.substring(7)
+        : undefined);
+
+    let user: any = null;
+    if (sessionToken) {
+      const payload = verifyToken(sessionToken);
+      if (payload?.userId) {
+        user = await prisma.user.findUnique({
+          where: { id: payload.userId },
+          include: { practitionerProfile: true },
+        });
+      }
+    }
+
+    const tokenReportId = token ? verifyReportCollectionToken(token) : null;
+    if (!user && (!tokenReportId || tokenReportId !== reportId)) {
+      return res.status(401).json({
+        error: 'Authentication required. Please log in or use a valid collection link.',
+      });
+    }
+
+    const report = await prisma.qeeqReport.findUnique({ where: { id: reportId } });
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found.' });
+    }
+
+    if (user && user.role !== 'ADMIN' && report.submittingPractitionerId !== user.id) {
+      return res.status(403).json({ error: 'Forbidden. You do not have access to this report.' });
+    }
+
+    if (report.status === 'DOWNLOADED_AND_PURGED') {
+      releaseClaim(reportId);
+      return res.status(200).json({ purged: false, alreadyPurged: true });
+    }
+
+    if (report.status !== 'COMPLETED') {
+      return res.status(409).json({ error: 'Report is not ready for download yet.' });
+    }
+
+    await executePurgeOnDownload(reportId, user?.id, req.ip);
+    releaseClaim(reportId);
+    res.status(200).json({ purged: true });
+  } catch (error: any) {
+    console.error('Download completion error:', error);
+    res.status(500).json({ error: error.message || 'Failed to finalise download.' });
   }
 });
 
