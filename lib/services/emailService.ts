@@ -47,6 +47,98 @@ function getPostmarkClient(): postmark.ServerClient {
   return postmarkClient;
 }
 
+function maskServerToken(token: string): string {
+  if (!token) return '(not set)';
+  return token.length <= 8
+    ? `${token.slice(0, 2)}...${token.slice(-2)} (${token.length} chars)`
+    : `${token.slice(0, 4)}...${token.slice(-4)} (${token.length} chars)`;
+}
+
+function describeCauseChain(error: unknown): string | undefined {
+  const parts: string[] = [];
+  let cursor: unknown = error;
+  let depth = 0;
+  while (cursor && depth < 5) {
+    const next = cursor instanceof Error ? `${cursor.name}: ${cursor.message}` : String(cursor);
+    if (parts.includes(next)) break;
+    parts.push(next);
+    cursor = (cursor as { cause?: unknown })?.cause;
+    depth += 1;
+  }
+  return parts.length > 1 ? parts.join(' > ') : undefined;
+}
+
+/**
+ * Turns a Postmark delivery failure into a human-actionable root-cause
+ * hypothesis. Emails are best-effort (non-blocking), so this is our primary
+ * visibility into "email worked before, then stopped" regressions: token
+ * revoked/rotated, message stream renamed, sender signature deactivated or
+ * unverified, or a blocked host egress (DNS/TLS/timeouts).
+ */
+function diagnoseEmailFault(
+  error: unknown,
+  config: { fromEmail: string; messageStream: string }
+): string | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  const status = (error as any)?.status ?? (error as any)?.statusCode;
+  const code = (error as any)?.code ?? (error as any)?.ErrorCode;
+
+  if (status === 401 || code === 10 || /invalid api key|unauthorized|invalid token/i.test(lower)) {
+    return `POSTMARK_SERVER_TOKEN is rejected (401/Unauthorized). The token in .env is revoked, rotated, or belongs to a different Postmark server. Paste the current token from app.postmarkapp.com -> Servers -> <your server> -> API Tokens and restart the service (from=${config.fromEmail}).`;
+  }
+  if (status === 403 || code === 405 || /sender signature/i.test(lower)) {
+    return `The 'From' sender (${config.fromEmail}) is not a VERIFIED sender signature inside Postmark (or its signature/DKIM/SPF was deactivated). Restore and re-verify it at app.postmarkapp.com -> Sender Signatures, then resend.`;
+  }
+  if (status === 404 || /stream.? (does not|was) not found|invalid stream|message stream/i.test(lower)) {
+    return `MessageStream '${config.messageStream}' does not exist on this Postmark server (configured via POSTMARK_MESSAGE_STREAM). Either create a stream with that exact name or set POSTMARK_MESSAGE_STREAM to the real stream name (Postmark always provides 'default').`;
+  }
+  if (
+    /timeout|timed out|abort/i.test(lower) ||
+    /socket hang up|econnreset|econnrefused|getaddrinfo|enotfound|network/i.test(lower)
+  ) {
+    return `Network-level failure reaching api.postmarkapp.com (timeout/DNS/TCP). This is host egress - firewall, DNS, or an outbound proxy - NOT a Postmark credential problem.`;
+  }
+  if (/tls|certificate|ssl|self.?signed/i.test(lower)) {
+    return `TLS handshake failure reaching api.postmarkapp.com. Check the host CA store / egress TLS interception.`;
+  }
+  return undefined;
+}
+
+interface EmailFailureContext {
+  to?: string;
+  subject?: string;
+}
+
+/**
+ * Central, structured logger for every email failure. Emits the recipient,
+ * sender, stream, (masked) token, HTTP status, Postmark error code, full cause
+ * chain, AND a human diagnosis - so a single log line explains why delivery
+ * stopped without requiring access to Postmark's dashboard. Returns the
+ * compact detail line reused as the surfaced `error` on EmailSendResult.
+ */
+function logEmailFailure(error: unknown, ctx: EmailFailureContext = {}): string {
+  const { serverToken, fromEmail, messageStream } = getEmailConfig();
+  const reason = error instanceof Error ? error.message : 'Unknown email error';
+  const status = (error as any)?.status ?? (error as any)?.statusCode;
+  const code = (error as any)?.code ?? (error as any)?.ErrorCode;
+  const causeChain = describeCauseChain(error);
+  const diagnosis = diagnoseEmailFault(error, { fromEmail, messageStream });
+  const bits = [
+    status !== undefined ? `http=${status}` : undefined,
+    code !== undefined && code !== 0 ? `code=${code}` : undefined,
+    causeChain ? `cause=${causeChain}` : undefined,
+  ].filter(Boolean);
+  const detailLine = bits.length ? `${reason} (${bits.join(' ').trim()})` : reason;
+  const recipientBit = ctx.to ? ` to=${ctx.to}` : '';
+  const subjectBit = ctx.subject ? ` subject="${ctx.subject}"` : '';
+  console.error(
+    `[Email Error (postmark)]${recipientBit} from=${fromEmail} stream=${messageStream} token=${maskServerToken(serverToken)}${subjectBit} :: ${detailLine}` +
+      (diagnosis ? `\n[Email Root-Cause] ${diagnosis}` : '')
+  );
+  return detailLine;
+}
+
 export interface EmailSendResult {
   success: boolean;
   messageId?: string;
@@ -87,30 +179,7 @@ async function sendEmail({
     });
     return { success: true, messageId: res.MessageID };
   } catch (error) {
-    // Extend the diagnostic value of every failure: log the HTTP status, the
-    // Postmark API error code, AND the underlying fetch cause (e.g. DNS
-    // failure "getaddrinfo EAI_AGAIN" or TLS error). A bare "fetch failed" is
-    // useless for support � include the real reason in the returned error too.
-    const { fromEmail } = getEmailConfig();
-    const reason = error instanceof Error ? error.message : 'Unknown email error';
-    const status = (error as any)?.status ?? (error as any)?.statusCode;
-    const code = (error as any)?.code ?? (error as any)?.ErrorCode;
-    const rawCause = (error as any)?.cause;
-    const cause =
-      rawCause instanceof Error
-        ? `${rawCause.name}: ${rawCause.message}`
-        : rawCause
-          ? String(rawCause)
-          : undefined;
-    const details = [
-      status !== undefined ? `http=${status}` : undefined,
-      code !== undefined && code !== 0 ? `code=${code}` : undefined,
-      cause ? `cause=${cause}` : undefined,
-    ].filter(Boolean).join(' ');
-    const detailLine = details ? `${reason} (${details})` : reason;
-    console.error(
-      `[Email Error (postmark)] to=${to} from=${fromEmail} subject="${subject}" � ${detailLine}`
-    );
+    const detailLine = logEmailFailure(error, { to, subject });
     return { success: false, error: detailLine };
   }
 }
@@ -124,31 +193,21 @@ async function sendEmail({
 export async function checkEmailConnectivity(): Promise<EmailSendResult> {
   const { serverToken, fromEmail, messageStream } = getEmailConfig();
   if (!serverToken) {
-    console.warn('[Email] POSTMARK_SERVER_TOKEN not set � outbound email is DISABLED (messages logged only).');
+    console.warn('[Email] POSTMARK_SERVER_TOKEN not set - outbound email is DISABLED (messages logged only).');
     return { success: false, error: 'POSTMARK_SERVER_TOKEN is not set.' };
   }
   try {
     const server = await getPostmarkClient().getServer();
     console.log(
-      `[Email] Postmark reachable � server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${messageStream}).`
+      `[Email] Postmark reachable - server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${messageStream}, token=${maskServerToken(serverToken)}).`
     );
     return { success: true };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'Unknown email error';
-    const rawCause = (error as any)?.cause;
-    const cause =
-      rawCause instanceof Error
-        ? `${rawCause.name}: ${rawCause.message}`
-        : rawCause
-          ? String(rawCause)
-          : undefined;
-    const status = (error as any)?.status ?? (error as any)?.statusCode;
-    const detailLine = [status !== undefined ? `http=${status}` : undefined, cause].filter(Boolean).join(' ');
+    const detailLine = logEmailFailure(error);
     console.error(
-      `[Email] Postmark connectivity check FAILED � ${reason}${detailLine ? ` (${detailLine})` : ''}. ` +
-        'Registration/login/approval emails will NOT be delivered until this is resolved.'
+      '[Email] Postmark connectivity check FAILED. Registration/login/approval emails will NOT be delivered until this is resolved.'
     );
-    return { success: false, error: detailLine ? `${reason} (${detailLine})` : reason };
+    return { success: false, error: detailLine };
   }
 }
 

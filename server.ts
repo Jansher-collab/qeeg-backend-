@@ -43,6 +43,7 @@ import {
   getReportFeeAUD,
   setReportFeeAUD,
   logPayPalCredentialSource,
+  classifyPaymentError,
 } from './lib/services/paypalService';
 import { executePurgeOnDownload } from './lib/services/purgeService';
 import { tryClaim, releaseClaim, claimantKey } from './lib/services/downloadClaims';
@@ -1188,9 +1189,10 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
       });
       if (!authResult.success) {
         console.error(`[submit] PayPal authorisation failed for order ${orderId}:`, authResult.error);
+        const { message, code } = classifyPaymentError(authResult.error, reportFee);
         return res.status(400).json({
-          error: `PayPal authorisation failed: ${authResult.error || 'Unknown error.'}`,
-          errorCode: 'PAYMENT_FAILED',
+          error: message,
+          errorCode: code,
         });
       }
       if (authResult.idempotent) {
@@ -1211,9 +1213,10 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
     if (!authId) {
       const authResult = await authorisePayment(payload.caseReference, reportFee);
       if (!authResult.success || !authResult.authorizationId) {
+        const { message, code } = classifyPaymentError(authResult.error, reportFee);
         return res.status(400).json({
-          error: `PayPal authorisation failed: ${authResult.error || 'Unable to authorise payment.'}`,
-          errorCode: 'PAYMENT_FAILED',
+          error: message,
+          errorCode: code,
         });
       }
       authId = authResult.authorizationId;

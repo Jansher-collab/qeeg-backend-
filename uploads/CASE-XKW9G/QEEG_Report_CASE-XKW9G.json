@@ -1,0 +1,176 @@
+{
+  "caseReference": "CASE-XKW9G",
+  "confidenceScore": 0.89,
+  "reliabilityScore": 0.99,
+  "overallSummary": "QEEG correlation analysis completed for case CASE-XKW9G. Findings mapped across 5 clinical domains with validated peer-reviewed literature citations.",
+  "demographics": {
+    "age": 63,
+    "gender": "FEMALE",
+    "handedness": "RIGHT"
+  },
+  "domains": [
+    {
+      "domain": "Medical",
+      "summary": "Neurological electro-anatomical findings and EEG band power deviations mapped against medical neuro-pathology literature.",
+      "keyIndicators": [
+        "Frontal Theta/Beta elevation correlated with attentional circuit dynamics.",
+        "Occipital Alpha peak frequency evaluation within age-normative range.",
+        "Absence of paroxysmal epileptiform spike-wave discharge patterns."
+      ],
+      "recommendations": [
+        "Evaluate underlying sleep architecture and metabolic screening.",
+        "Consider follow-up neurology consultation if focal slowing persists."
+      ],
+      "literatureCitations": [
+        {
+          "id": "PMID-40750920",
+          "title": "Newborn brain development comparison of plateau and plain regions: insights from quantitative EEG.",
+          "authors": [
+            "Zhao X",
+            "Ze B",
+            "Li J",
+            "Huang L",
+            "Tan X"
+          ],
+          "journal": "Pediatr Res",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 40750920) on Newborn brain development comparison of plateau and plain regions: insights from quantitative EEG.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/40750920/",
+          "source": "PubMed",
+          "doi": "10.1038/s41390-025-04220-9"
+        },
+        {
+          "id": "PMID-35528740",
+          "title": "Using Single-Photon Emission Computerized Tomography on Patients With Positive Quantitative Electroencephalogram to Evaluate Chronic Mild Traumatic Brain Injury With Persistent Symptoms.",
+          "authors": [
+            "Gosset A",
+            "Wagman H",
+            "Pavel D",
+            "Cohen PF",
+            "Tarzwell R"
+          ],
+          "journal": "Front Neurol",
+          "year": 2022,
+          "abstract": "PubMed Article (PMID: 35528740) on Using Single-Photon Emission Computerized Tomography on Patients With Positive Quantitative Electroencephalogram to Evaluate Chronic Mild Traumatic Brain Injury With Persistent Symptoms.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/35528740/",
+          "source": "PubMed",
+          "doi": "10.3389/fneur.2022.704844"
+        }
+      ]
+    },
+    {
+      "domain": "Psychological",
+      "summary": "Cognitive control, impulse regulation, and executive processing metrics integrated with TOVA performance data.",
+      "keyIndicators": [
+        "TOVA ADHD Index score: 5.008500662289024",
+        "Response Time Variability (RTV) elevated during second quarter of testing.",
+        "Impulsivity score correlates with sensorimotor rhythm (SMR) power dynamics."
+      ],
+      "recommendations": [
+        "Implement cognitive behavioral strategies targeting task persistence.",
+        "Monitor working memory load during structured executive tasks."
+      ],
+      "literatureCitations": []
+    },
+    {
+      "domain": "Nutritional",
+      "summary": "Metabolic co-factors, neurochemical precursors, and micronutrient support targets influencing cortical arousal state.",
+      "keyIndicators": [
+        "Elevated slow-wave activity potentially modulated by magnesium/vitamin D status.",
+        "Neurochemical precursor demand associated with catecholamine synthesis pathways."
+      ],
+      "recommendations": [
+        "Screen serum Ferritin, Vitamin D3, B-complex, and Omega-3 index.",
+        "Consider targeted supplementation under medical supervision to support neurotransmitter synthesis."
+      ],
+      "literatureCitations": []
+    },
+    {
+      "domain": "Lifestyle",
+      "summary": "Circadian rhythm stability, sleep quality, physical activity, and stress reactivity factors influencing EEG stability.",
+      "keyIndicators": [
+        "Sleep onset delay indicators observed in clinical checklist correlates.",
+        "Autonomic arousal index consistent with high nocturnal stress reactivity."
+      ],
+      "recommendations": [
+        "Establish consistent sleep-wake schedule with morning sunlight exposure (10,000 lux).",
+        "Incorporate daily moderate aerobic exercise (30 mins) to enhance neuroplasticity.",
+        "Implement evening blue-light restriction 2 hours prior to sleep."
+      ],
+      "literatureCitations": []
+    },
+    {
+      "domain": "Neurofeedback Treatment-Response",
+      "summary": "Evidence-based protocol recommendations, frequency band targets, and anticipated treatment response trajectories.",
+      "keyIndicators": [
+        "Frontal Cz/Fz Theta (4-8 Hz) down-training protocol indicated.",
+        "Sensorimotor Rhythm (SMR 12-15 Hz) enhancement at C4-A2 to support sensorimotor gating.",
+        "Coherence optimization protocol indicated across bilateral parietal networks."
+      ],
+      "recommendations": [
+        "Initiate 20-30 session neurofeedback protocol at 2 sessions per week.",
+        "Re-assess QEEG after 15 sessions to measure cortical impedance and band power normalization."
+      ],
+      "conflictOfInterestDisclosure": "Conflict of Interest Disclosure: Neurofeedback treatment options presented herein are based on published literature and protocol standardisations. The platform maintains no financial interest, sponsorship, or commercial endorsement of specific equipment manufacturers, software vendors, or proprietary neurofeedback systems.",
+      "literatureCitations": [
+        {
+          "id": "S2-eb12c8d0471fdffa1e79eb13f30aa31dd4644de6",
+          "title": "History of the Othmer Method",
+          "authors": [
+            "S. Othmer"
+          ],
+          "journal": "Academic Journal",
+          "year": 2020,
+          "abstract": "Abstract This chapter traces the evolution of Infra-Low Frequency Neurofeedback, and the associated instrumentation development, over the course of 34 years. Exploitation of the broadening clinical reach of SMR-beta protocols served to delay major protocol innovation for some years. The principle of individualized “optimal response frequency” then became the pilot light of further developments, leading ultimately to the deep infra-low frequency realm. The integration of ILF neurofeedback with Alpha-Theta training and EEG synchrony protocols has yielded a competent neurotherapeutic approach for the challenging presentations encountered in a mental health practice. A complementary perspective is given in Chapter 42 by Siegfried Othmer.",
+          "url": "https://www.semanticscholar.org/paper/eb12c8d0471fdffa1e79eb13f30aa31dd4644de6",
+          "source": "SemanticScholar",
+          "doi": "10.1016/b978-0-12-817659-7.00043-9"
+        },
+        {
+          "id": "S2-6234ee6399eb2578a0d2db87a2f6e3063b261471",
+          "title": "Distinct effects of different neurofeedback protocols on the neural mechanisms of response inhibition in ADHD.",
+          "authors": [
+            "A. Neuhäußer",
+            "Annet Bluschke",
+            "V. Roessner",
+            "C. Beste"
+          ],
+          "journal": "Clinical Neurophysiology",
+          "year": 2023,
+          "abstract": "OBJECTIVE\nIn attention deficit/hyperactivity disorder (ADHD), impaired response inhibition is frequently observed. A promising non-pharmacological treatment is electroencephalography (EEG)-neurofeedback (NF) training. However, the widely used theta-down/beta-up regulation (↓θ↑β) NF protocol may not be optimal for targeting these deficits. We examined how neurofeedback protocols training the upregulation of theta and/or beta power affect inhibitory control in children and adolescents with ADHD.\n\n\nMETHODS\n64 patients with ADHD took part in the three NF trainings. Aside from parent-reported ADHD symptoms and behavioural performance data, neurophysiological parameters collected via a Go/Nogo task and corrected to account for intraindividual variability were compared in a pre-post design and to an ADHD (n = 20) as well as a typically developing control group (n = 24).\n\n\nRESULTS\nThe examined NF protocols resulted in similar improvements in response inhibition with the neurophysiological mechanisms differing substantially. The upregulation of theta led to a specific Nogo-P3 increase, while training beta upregulation as well as the combined protocol resulted in less specific effects.\n\n\nCONCLUSIONS\nThis study shows distinct effects of different theta/beta-neurofeedback protocols on the neural mechanisms underlying improvements in response inhibition in patients with ADHD.\n\n\nSIGNIFICANCE\nThese effects shed further light on the oscillatory dynamics underlying cognitive control in ADHD and how these may be targeted in neurofeedback treatments.",
+          "url": "https://www.semanticscholar.org/paper/6234ee6399eb2578a0d2db87a2f6e3063b261471",
+          "source": "SemanticScholar",
+          "doi": "10.1016/j.clinph.2023.06.014"
+        }
+      ]
+    }
+  ],
+  "aiDisclaimer": "Disclaimer: This report was generated using automated analytical correlation pipelines and synthesized literature databases. It is intended strictly as a decision-support tool for licensed practitioners and does not constitute formal medical diagnosis or individual clinical advice.",
+  "knowledgeBase": {
+    "answer": "## Clinical Relevance to QEEG-Guided Neurofeedback\n\nThe clinical presentation you describe is **highly relevant** to QEEG-guided neurofeedback and directly aligns with the symptom domains and quantitative metrics captured by the QEEG.com.au platform.\n\n### Symptom Domain Mapping\n\nAccording to the platform's standardised intake framework:\n\n1. **ADHD attention executive function** maps to:\n   - **Domain 1 (Inattention)** — \"sustained focus deficit, distractibility, carelessness\" [Source 1]\n   - **Domain 8 (Executive Function / Organisation)** — \"working memory, cognitive inflexibility\" [Source 1]\n\n2. **Inattention distractibility** directly corresponds to:\n   - **Domain 1 (Inattention)** [Source 1]\n\n3. **Anxiety** correlates with:\n   - **Domain 3 (Anxiety)** — \"generalised worry, autonomic hyperarousal, somatic tension\" [Source 1]\n\n### Quantitative Performance Data\n\n- **TOVA sustained attention d-prime** is explicitly captured as part of the platform's \"TOVA continuous-performance data\" used for correlation synthesis [Source 1]. The reliability scoring mechanism incorporates \"test/retest consistency\" from TOVA output [Source 2].\n\n### Beta Asymmetry\n\nWhile \"beta asymmetry\" is mentioned in your question as an anxiety marker, the provided excerpts do **not** contain specific protocol details regarding EEG frequency bands, asymmetry analysis, or neurofeedback training targets. The platform does perform \"quantitative EEG\" correlation against clinical domains [Source 1], but the excerpts do not describe the underlying neurophysiological metrics.\n\n### Clinical Decision-Support Context\n\nAll correlation findings generated by the platform are classified as \"clinical decision-support outputs\" and carry mandatory disclaimers: they are **not a substitute for independent clinical judgement** [Source 1]. The output assists—but does not replace—practitioner interpretation.\n\n---\n\n**In summary:** The presentation is directly relevant across multiple validated symptom domains and is supported by objective TOVA performance metrics within the platform's workflow.",
+    "grounded": true,
+    "sourceChunks": [
+      {
+        "sourceFile": "03-symptom-domains.md",
+        "title": "Symptom Domains and Correlation Synthesis",
+        "excerpt": "# Symptom Domains and Correlation Synthesis\n\nThe QEEG.com.au platform quantifies clinical symptoms across eleven standardised domains captured on the intake checklist and correlated against quantitative EEG and TOVA continuous-performance data.\n\n## Domain List\n\n1. Inattention — sustained focus deficit, distractibility, carelessness.\n2. Hyperactivity / Impulsivity — motor restlessness, interrupted-verbal behaviour.\n3. Anxiety — generalised worry, autonomic hyperarousal, somatic tension.\n4. Mood /"
+      },
+      {
+        "sourceFile": "04-payment-billing-lifecycle.md",
+        "title": "Payment and Billing Lifecycle",
+        "excerpt": "# Payment and Billing Lifecycle\n\nQEEG.com.au integrates a PayPal REST API for payment holds, captures, and voids.\n\n## Fee Hold on Submission\n\nAt submission, a $65.00 AUD authorisation hold is created via the PayPal Orders V2 capture flow. Funds are not moved from the practitioner's account at submission time; they are captured only once generation has succeeded and the report has been verified.\n\n## Capture on Approval and Generation\n\nFollowing admin approval and successful report generation, the"
+      },
+      {
+        "sourceFile": "01-zero-retention-policy.md",
+        "title": "Zero-Retention Data Policy",
+        "excerpt": "# Zero-Retention Data Policy\n\nQEEG.com.au operates a strict zero-retention data policy in accordance with the Australian Privacy Act 1988 (Privacy Principles 1 to 13, with particular focus on Principle 11 — Security of Personal Information).\n\n## Patient Data Minimisation\n\nThe platform never requests, stores, or processes patient full names, birth dates, addresses, or any other directly identifying personal information. Referring practitioners record only a unique Case Reference and basic demogra"
+      },
+      {
+        "sourceFile": "02-reliability-and-deidentification.md",
+        "title": "Reliability Scoring and De-Identification Gate",
+        "excerpt": "# Reliability Scoring and De-Identification Gate\n\nEvery report submission is validated by a server-side reliability and de-identification quality gate before it is accepted.\n\n## Mandatory Threshold\n\nThe mandatory reliability threshold is 0.80. Submissions scoring below this threshold are rejected, the associated PayPal authorisation is voided, and no data is retained.\n\n## Reliability Score Computation\n\nThe reliability score is computed from the TOVA continuous-performance task output and the cli"
+      }
+    ]
+  },
+  "compiledAt": "2026-09-29T17:16:49.008Z"
+}

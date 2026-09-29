@@ -260,6 +260,66 @@ export interface PaymentCaptureResult {
   error?: string;
 }
 
+export type PaymentErrorCode =
+  | 'INSUFFICIENT_FUNDS'
+  | 'INSTRUMENT_DECLINED'
+  | 'FUNDING_SOURCE_LIMIT'
+  | 'PAYER_ACCOUNT_LOCKED'
+  | 'PAYMENT_FAILED';
+
+export interface ClassifiedPaymentError {
+  message: string;
+  code: PaymentErrorCode;
+}
+
+/**
+ * Turns a low-level PayPal failure string (as produced by buildPayPalErrorText
+ * or the mock/legacy paths) into a practitioner-facing message plus a stable
+ * error code. The frontend renders the returned `message` verbatim inside the
+ * payment-failure modal, so the "insufficient balance" case reads clearly
+ * instead of surfacing a raw PayPal API string.
+ */
+export function classifyPaymentError(
+  rawError: string | undefined,
+  amountAUD: number
+): ClassifiedPaymentError {
+  const text = (rawError || '').toLowerCase();
+  const required = `AUD ${amountAUD.toFixed(2)}`;
+
+  if (/insufficient funds?|insufficient balance|not enough funds?/i.test(text)) {
+    return {
+      code: 'INSUFFICIENT_FUNDS',
+      message: `Payment could not be completed: your account, card, or wallet does not have sufficient balance to cover ${required} in full (upfront). Please add funds or use another payment method and retry.`,
+    };
+  }
+
+  if (/instrument declined|declined by the (processor|bank|issuer)|can'?t be used for this payment/i.test(text)) {
+    return {
+      code: 'INSTRUMENT_DECLINED',
+      message: `Your payment method was declined (insufficient balance or blocked by your financial institution). A full upfront payment of ${required} is required. Please add funds or use another payment method.`,
+    };
+  }
+
+  if (/funding source limit|transaction limit|exceeds.*limit/i.test(text)) {
+    return {
+      code: 'FUNDING_SOURCE_LIMIT',
+      message: `Your payment method has reached its funding limit and cannot cover ${required} upfront. Please use a different funding source and retry.`,
+    };
+  }
+
+  if (/payer account locked|account locked or closed|payer cannot pay|payee account/i.test(text)) {
+    return {
+      code: 'PAYER_ACCOUNT_LOCKED',
+      message: `PayPal could not process the payment (${required}). Your PayPal account may be locked, closed, or restricted. Please resolve this with PayPal and retry.`,
+    };
+  }
+
+  return {
+    code: 'PAYMENT_FAILED',
+    message: `Your payment could not be completed (${required} full, upfront). ${rawError ? rawError.replace(/\s\[debug_id=.*$/, '') : 'Please retry with a different payment method.'}`,
+  };
+}
+
 export interface PayPalOrderCreateResult {
   success: boolean;
   orderId?: string;
@@ -384,6 +444,8 @@ export async function createPayPalOrder(
 
 export interface PayPalOrderSnapshot {
   exists: boolean;
+  /** PayPal order intent (AUTHORIZE vs CAPTURE). CAPTURE-intent orders are the Pay Later / instalment flows we must refuse. */
+  intent?: string;
   status?: string;
   referenceId?: string;
   authorizationId?: string;
@@ -410,6 +472,7 @@ export async function getPayPalOrder(
     const orderIdTrimmed = orderId.trim();
     return {
       exists: orderIdTrimmed.startsWith('ORDER-MOCK-') || orderIdTrimmed.startsWith('AUTH-MOCK-'),
+      intent: 'AUTHORIZE',
       status: 'CREATED',
     };
   }
@@ -442,6 +505,7 @@ export async function getPayPalOrder(
     const data: any = await res.json();
     return {
       exists: true,
+      intent: typeof data?.intent === 'string' ? data.intent : undefined,
       status: typeof data?.status === 'string' ? data.status : undefined,
       referenceId:
         typeof data?.purchase_units?.[0]?.reference_id === 'string'
@@ -735,6 +799,22 @@ export async function authorizePayPalOrder(
       };
     }
 
+    // Strict upfront payment only. An order created with CAPTURE intent is the
+    // PayPal Pay Later / Pay in 4 / instalment path; requiring AUTHORIZE here
+    // (in addition to the frontend disable-funding hint and the SDK's
+    // intent:'authorize') makes it structurally impossible to pay an instalment
+    // plan for a report.
+    if (snapshot.intent && snapshot.intent !== 'AUTHORIZE') {
+      console.error(
+        `[paypalService] Order ${targetOrderId} uses intent=${snapshot.intent}; only AUTHORIZE (full upfront payment) is supported.`
+      );
+      return {
+        success: false,
+        error: `PayPal order ${targetOrderId} was created with '${snapshot.intent}' intent (instalment / Pay-in-4 style). ` +
+          'Only full upfront payment is supported - please retry with a standard PayPal checkout.',
+      };
+    }
+
     if (expected?.caseReference && snapshot.referenceId && snapshot.referenceId !== expected.caseReference) {
       console.error(
         `[paypalService] Order ${targetOrderId} was created for case ${snapshot.referenceId}, not ${expected.caseReference} — refusing to authorise mismatched order.`
@@ -869,9 +949,13 @@ export async function capturePayment(
       logPayPalFailure('Capture payment', captureResponse.status, captureData);
     }
 
+    // A failed capture response must NEVER surface a capture id: downstream,
+    // reportProcessor keys "money captured" off that id, and PayPal error
+    // payloads (e.g. INSTRUMENT_DECLINED = insufficient funds) carry no id.
     return {
       success: captureResponse.ok,
-      captureId: captureData.id,
+      captureId:
+        captureResponse.ok && typeof captureData?.id === 'string' ? captureData.id : undefined,
       amount: amountAUD,
       currency: 'AUD',
       error: captureResponse.ok
@@ -884,6 +968,74 @@ export async function capturePayment(
       amount: amountAUD,
       currency: 'AUD',
       error: error instanceof Error ? error.message : 'Unknown capture error',
+    };
+  }
+}
+
+/**
+ * Refunds a PayPal capture. Used when the full upfront capture succeeded but
+ * delivery failed afterwards (correlation/compile error), so the practitioner
+ * is never charged for a report that was not produced. Mock capture ids return
+ * a simulated refund id in development.
+ */
+export async function refundCapture(
+  captureId: string,
+  amountAUD: number
+): Promise<{ success: boolean; refundId?: string; error?: string }> {
+  if (!isPayPalConfigured() || captureId.startsWith('CAP-MOCK-')) {
+    assertPayPalConfigured('payment refund');
+    return { success: true, refundId: `REF-MOCK-${Date.now()}` };
+  }
+
+  try {
+    const accessToken = await getPayPalAccessToken();
+    const baseUrl = payPalBaseUrl();
+
+    const refundResponse = await fetchWithTimeout(
+      `${baseUrl}/v2/payments/captures/${encodeURIComponent(captureId)}/refund`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: {
+            currency_code: 'AUD',
+            value: formatAmountToTwoDecimals(amountAUD),
+          },
+        }),
+      }
+    );
+
+    const refundData: any = await refundResponse.json().catch(() => ({}));
+
+    if (!refundResponse.ok) {
+      // A retry after a lost response may hit a capture that is already fully
+      // refunded - treat that as success rather than a spurious manual alarm.
+      const alreadyRefunded =
+        refundResponse.status === 422 &&
+        /already (been )?refunded|CAPTURE_STATUS_ALREADY_REFUNDED|already fully refunded/i.test(
+          JSON.stringify(refundData)
+        );
+      logPayPalFailure('Refund capture', refundResponse.status, refundData);
+      if (alreadyRefunded) {
+        return { success: true, refundId: typeof refundData?.id === 'string' ? refundData.id : undefined };
+      }
+      return {
+        success: false,
+        error: buildPayPalErrorText(refundData, `PayPal refund of capture ${captureId} failed`),
+      };
+    }
+
+    return {
+      success: true,
+      refundId: typeof refundData?.id === 'string' ? refundData.id : undefined,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown refund error',
     };
   }
 }
