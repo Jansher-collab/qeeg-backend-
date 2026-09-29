@@ -152,6 +152,8 @@ model QeeqReport {
   paypalAuthorizationId String?
   paypalCaptureId        String?
   feeAmount              Float         @default(65.0)
+  paidAmount             Float         @default(0.0)
+  paymentsJson           Json?
   paymentStatus          PaymentStatus @default(NOT_STARTED)
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import os from 'os';
 import { claimNextJob, completeJob, failJob } from './lib/services/jobQueue';
 import { processReportGeneration, processReportVoid } from './lib/services/reportProcessor';
+import { refundReportPayments } from './lib/services/reportRefund';
 import { validateEnvironment, reportEnvironmentIssues } from './lib/config/env';
 
 const envCheck = reportEnvironmentIssues(validateEnvironment());
@@ -39,6 +40,31 @@ async function handleOneJob(): Promise<boolean> {
       `[Worker] ${terminal ? 'FAILED (permanent)' : 'Failed (will retry)'} job ${job.id} (${job.type}) for report ${job.reportId}:`,
       error?.message || error
     );
+    // Terminal failure of a generation job: money was captured per-installment
+    // at payment time, so refund every captured installment now - a practitioner
+    // must never be charged for a report that can never be produced. Refund
+    // failures are collected (not thrown) and surfaced as MANUAL ACTION REQUIRED.
+    if (terminal && job.type === 'CORRELATE_AND_CAPTURE') {
+      try {
+        const refund = await refundReportPayments(job.reportId, { reason: 'worker exhausted all generation attempts' });
+        if (refund.failures.length > 0) {
+          console.error(
+            `[Worker] MANUAL ACTION REQUIRED: refunds partially failed for report ${job.reportId} (refunded ${refund.refundedAmount.toFixed(2)} AUD). Failures: ${JSON.stringify(refund.failures)}`
+          );
+        } else if (refund.alreadyVoid) {
+          console.log(`[Worker] Report ${job.reportId} was already VOIDED; nothing further to refund.`);
+        } else {
+          console.log(
+            `[Worker] Refunded ${refund.refundedAmount.toFixed(2)} AUD (${refund.refundIds.length} transaction(s)) for terminally failed report ${job.reportId}; report parked as RELIABILITY_REJECTED / VOIDED.`
+          );
+        }
+      } catch (refundError) {
+        console.error(
+          `[Worker] MANUAL ACTION REQUIRED: refund sweep THREW for report ${job.reportId}:`,
+          refundError instanceof Error ? refundError.message : refundError
+        );
+      }
+    }
   }
   return true;
 }

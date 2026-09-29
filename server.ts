@@ -64,6 +64,11 @@ import { scheduleReportReminders } from './lib/services/reportReminderService';
 import { logActivity } from './lib/services/activityLogger';
 import { enqueueJob, JOB_TYPES } from './lib/services/jobQueue';
 import { processReportGeneration, processReportVoid } from './lib/services/reportProcessor';
+import {
+  capturePaymentInstallment,
+  getPaymentProgress,
+  InstallmentPaymentError,
+} from './lib/services/installmentPayment';
 import { withTimeout } from './lib/services/timeout';
 import {
   LEGAL_DOCUMENT_TYPES,
@@ -1050,6 +1055,8 @@ app.get('/api/practitioner/reports', authenticateUser, async (req: Request, res:
           caseReference: true,
           status: true,
           feeAmount: true,
+          paidAmount: true,
+          paymentsJson: true,
           paymentStatus: true,
           paypalAuthorizationId: true,
           paypalCaptureId: true,
@@ -1122,13 +1129,61 @@ app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: 
       typeof req.body?.caseReference === 'string' && req.body.caseReference.trim()
         ? req.body.caseReference.trim()
         : undefined;
+    const reportId =
+      typeof req.body?.reportId === 'string' && req.body.reportId.trim() ? req.body.reportId.trim() : undefined;
+    const requestedAmount =
+      typeof req.body?.amount === 'number' && req.body.amount > 0 ? Math.round(req.body.amount * 100) / 100 : undefined;
 
-    if (!caseReference) {
+    // Installment-capable order creation. Without reportId this is the classic
+    // new-case order (full fee). With reportId the amount is clamped to the
+    // report's REMAINING balance, letting a practitioner pay down a single case
+    // in multiple stage payments totalling the $65 AUD fee.
+    const reportFee = await getReportFeeAUD();
+    let effectiveCaseRef = caseReference;
+    let paid = 0;
+    let fee = reportFee;
+    let remaining = reportFee;
+
+    if (reportId) {
+      const report = await prisma.qeeqReport.findUnique({
+        where: { id: reportId },
+        select: {
+          caseReference: true,
+          feeAmount: true,
+          paidAmount: true,
+          status: true,
+          submittingPractitionerId: true,
+        },
+      });
+      if (!report || report.submittingPractitionerId !== user.id) {
+        return res.status(404).json({ error: 'Report not found.' });
+      }
+      if (report.status !== 'PAYMENT_AUTHORISED') {
+        return res.status(409).json({
+          error: `This report is not open for further payments (status: ${report.status}).`,
+          errorCode: 'REPORT_NOT_OPEN_FOR_PAYMENT',
+        });
+      }
+      effectiveCaseRef = report.caseReference;
+      fee = report.feeAmount || reportFee;
+      paid = Math.round((report.paidAmount ?? 0) * 100) / 100;
+      remaining = Math.max(0, Math.round((fee - paid) * 100) / 100);
+    }
+
+    if (!effectiveCaseRef) {
       return res.status(400).json({ error: 'A caseReference is required to create a payment order.' });
     }
 
-    const reportFee = await getReportFeeAUD();
-    const created = await createPayPalOrder(caseReference, reportFee);
+    if (remaining <= 0.005) {
+      return res.status(409).json({
+        error: 'This report is already fully paid.',
+        errorCode: 'REPORT_ALREADY_PAID',
+      });
+    }
+    const orderAmount = requestedAmount !== undefined ? Math.min(requestedAmount, remaining) : remaining;
+    const amountAfterOrder = Math.max(0, Math.round((remaining - orderAmount) * 100) / 100);
+
+    const created = await createPayPalOrder(effectiveCaseRef, orderAmount);
 
     if (!created.success || !created.orderId) {
       return res.status(400).json({
@@ -1138,18 +1193,26 @@ app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: 
     }
 
     console.info(
-      `[payments/orders] Issued fresh PayPal order ${created.orderId} for case ${caseReference} (${created.amount} ${created.currency}, user ${user.id}).`
+      `[payments/orders] Issued fresh PayPal order ${created.orderId} for case ${effectiveCaseRef} (${created.amount} ${created.currency}, user ${user.id}).`
     );
 
     await logActivity({
       userId: user.id,
-      caseReference,
+      caseReference: effectiveCaseRef,
       action: 'PAYPAL_ORDER_CREATED',
-      details: { orderId: created.orderId, amount: created.amount },
+      details: { orderId: created.orderId, amount: orderAmount, paidAmount: paid, feeAmount: fee, remainingAmount: remaining },
       ipAddress: req.ip || '127.0.0.1',
     });
 
-    res.json({ orderId: created.orderId, amount: created.amount, currency: created.currency });
+    res.json({
+      orderId: created.orderId,
+      amount: orderAmount,
+      currency: created.currency,
+      paidAmount: paid,
+      feeAmount: fee,
+      remainingAmount: amountAfterOrder,
+      fullyPaid: Math.abs(orderAmount - remaining) < 0.005,
+    });
   } catch (error: any) {
     console.error('Create PayPal order error:', error);
     res.status(500).json({ error: error.message || 'Failed to create payment order.' });
@@ -1166,6 +1229,14 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
 
     const reportFee = await getReportFeeAUD();
     let authId = payload.paypalAuthorizationId;
+
+    // Optional per-installment amount for THIS transaction (defaults to the
+    // full fee). Cumulative paidAmount is tracked on the report; generation is
+    // on HOLD until paidAmount reaches the fee.
+    const paymentInstallmentAmount =
+      typeof payload.amount === 'number' && payload.amount > 0
+        ? Math.min(Math.round(payload.amount * 100) / 100, reportFee)
+        : reportFee;
 
     // Preferred flow: the frontend hands over the approved (but not yet
     // authorised) order id so the SDK popup is never held open across our
@@ -1189,7 +1260,7 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
       });
       if (!authResult.success) {
         console.error(`[submit] PayPal authorisation failed for order ${orderId}:`, authResult.error);
-        const { message, code } = classifyPaymentError(authResult.error, reportFee);
+        const { message, code } = classifyPaymentError(authResult.error, paymentInstallmentAmount);
         return res.status(400).json({
           error: message,
           errorCode: code,
@@ -1211,9 +1282,9 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
     // path). Any real authorisation failure must block submission — it is
     // never silently replaced with a mock id.
     if (!authId) {
-      const authResult = await authorisePayment(payload.caseReference, reportFee);
+      const authResult = await authorisePayment(payload.caseReference, paymentInstallmentAmount);
       if (!authResult.success || !authResult.authorizationId) {
-        const { message, code } = classifyPaymentError(authResult.error, reportFee);
+        const { message, code } = classifyPaymentError(authResult.error, paymentInstallmentAmount);
         return res.status(400).json({
           error: message,
           errorCode: code,
@@ -1332,24 +1403,186 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
       ipAddress: req.ip || '127.0.0.1',
     });
 
-    // Automatic processing: capture + generate in-band (and via the durable
-    // worker job) — the manual admin approval gate has been removed.
-    const pipeline = await startReportProduction(newReport.id, user.id, globalRetentionDays);
-
-    res.status(201).json({
-      message:
-        pipeline.status === 'COMPLETED'
-          ? 'Payment authorised, funds held, and report generated automatically.'
-          : 'Payment authorised and funds held; report generation is running.',
+    // Automatic payment handling: capture THIS installment now, per payment
+    // round. While cumulative paidAmount < feeAmount the report stays on HOLD
+    // (PAYMENT_AUTHORISED). Once the total reaches the full fee, the automated
+    // generation pipeline fires (enqueued durably + in-band) - no admin gate.
+    const installment = await capturePaymentInstallment({
       reportId: newReport.id,
-      caseReference: newReport.caseReference,
-      status: pipeline.status,
-      feeAmount: newReport.feeAmount,
-      customRetentionDays: globalRetentionDays,
+      authorizationId: authId ?? '',
+      amount: paymentInstallmentAmount,
+      ipAddress: req.ip || '127.0.0.1',
+      userId: user.id,
     });
+
+    if (installment.fullyPaid) {
+      const pipeline = await startReportProduction(newReport.id, user.id, globalRetentionDays);
+      res.status(201).json({
+        message:
+          pipeline.status === 'COMPLETED'
+            ? 'Payment complete (full fee received) and report generated automatically.'
+            : 'Payment complete (full fee received); report generation is running.',
+        reportId: newReport.id,
+        caseReference: newReport.caseReference,
+        status: pipeline.status,
+        feeAmount: newReport.feeAmount,
+        paidAmount: installment.paidAmount,
+        remainingAmount: 0,
+        fullyPaid: true,
+        customRetentionDays: globalRetentionDays,
+      });
+    } else {
+      // Partial stage payment: the pipeline is deliberately NOT started - the
+      // report waits on HOLD until paidAmount reaches the full fee.
+      res.status(201).json({
+        message: `Payment of ${installment.amount.toFixed(2)} AUD received. ${installment.remainingAmount.toFixed(2)} AUD remains outstanding — the report will be generated automatically once the full ${installment.feeAmount.toFixed(2)} AUD is paid.`,
+        reportId: newReport.id,
+        caseReference: newReport.caseReference,
+        status: 'PAYMENT_AUTHORISED',
+        needsMorePayments: true,
+        feeAmount: newReport.feeAmount,
+        paidAmount: installment.paidAmount,
+        remainingAmount: installment.remainingAmount,
+        fullyPaid: false,
+        customRetentionDays: globalRetentionDays,
+      });
+    }
   } catch (error: any) {
     console.error('Submit report error:', error);
-    res.status(500).json({ error: error.message || 'Submission failed.' });
+    // Capture/installment failures carry a friendly, classified message + code.
+    res.status(500).json({
+      error:
+        error instanceof InstallmentPaymentError
+          ? error.message
+          : error.message || 'Submission failed.',
+      ...(error instanceof InstallmentPaymentError ? { errorCode: error.code } : {}),
+    });
+  }
+});
+
+// ----------------------------------------------------
+// 4a2. Subsequent Installment Payment — /api/reports/:id/pay
+// ----------------------------------------------------
+// Lets a practitioner pay down the REMAINING balance of an existing report
+// (still PAYMENT_AUTHORISED after a partial stage payment). Flow mirrors the
+// submit path: PayPalButtons.createOrder → /api/payments/orders with
+// { reportId, amount }, then onApprove sends the approved order id here.
+// Authorisation + capture happen server-side, and generation auto-fires the
+// moment paidAmount reaches feeAmount.
+app.post('/api/reports/:id/pay', authenticateUser, submitRateLimit, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const reportId = req.params.id as string;
+    const orderId = typeof req.body?.paypalOrderId === 'string' ? req.body.paypalOrderId.trim() : '';
+    const requestedAmount =
+      typeof req.body?.amount === 'number' && req.body.amount > 0 ? Math.round(req.body.amount * 100) / 100 : undefined;
+
+    const report = await prisma.qeeqReport.findUnique({
+      where: { id: reportId },
+      select: {
+        id: true,
+        caseReference: true,
+        feeAmount: true,
+        paidAmount: true,
+        status: true,
+        submittingPractitionerId: true,
+        customRetentionDays: true,
+      },
+    });
+    if (!report || report.submittingPractitionerId !== user.id) {
+      return res.status(404).json({ error: 'Report not found.' });
+    }
+
+    const progress = await getPaymentProgress(report);
+    if (progress.fullyPaid) {
+      // Self-heal: a fully-paid report still parked on HOLD (e.g. generation
+      // rolled back after its final installment) gets its pipeline restarted.
+      if (report.status === 'PAYMENT_AUTHORISED') {
+        try {
+          await startReportProduction(reportId, user.id, report.customRetentionDays);
+        } catch (genErr: any) {
+          console.error('Restart of in-band generation for a fully-paid report failed:', genErr);
+        }
+      }
+      return res.json({
+        message: 'This report is already fully paid.',
+        reportId,
+        caseReference: report.caseReference,
+        status: 'PAYMENT_AUTHORISED',
+        feeAmount: progress.feeAmount,
+        paidAmount: progress.feeAmount,
+        remainingAmount: 0,
+        fullyPaid: true,
+      });
+    }
+    if (report.status !== 'PAYMENT_AUTHORISED') {
+      return res.status(409).json({
+        error: `This report is not open for further payments (status: ${report.status}).`,
+        errorCode: 'REPORT_NOT_OPEN_FOR_PAYMENT',
+      });
+    }
+    if (!orderId) {
+      return res.status(400).json({ error: 'A valid PayPal order id is required.', errorCode: 'PAYMENT_FAILED' });
+    }
+
+    const payAmount =
+      requestedAmount !== undefined
+        ? Math.min(requestedAmount, progress.remainingAmount)
+        : progress.remainingAmount;
+
+    const authResult = await authorizePayPalOrder(orderId, {
+      caseReference: report.caseReference,
+    });
+    if (!authResult.success || !authResult.authorizationId) {
+      const { message, code } = classifyPaymentError(authResult.error, payAmount);
+      return res.status(400).json({ error: message, errorCode: code });
+    }
+
+    const installment = await capturePaymentInstallment({
+      reportId,
+      authorizationId: authResult.authorizationId,
+      amount: payAmount,
+      ipAddress: req.ip || '127.0.0.1',
+      userId: user.id,
+    });
+
+    if (installment.fullyPaid) {
+      const pipeline = await startReportProduction(reportId, user.id, report.customRetentionDays);
+      return res.json({
+        message:
+          pipeline.status === 'COMPLETED'
+            ? 'Payment complete (full fee received) and report generated automatically.'
+            : 'Payment complete (full fee received); report generation is running.',
+        reportId,
+        caseReference: report.caseReference,
+        status: pipeline.status,
+        feeAmount: installment.feeAmount,
+        paidAmount: installment.paidAmount,
+        remainingAmount: 0,
+        fullyPaid: true,
+      });
+    }
+
+    return res.json({
+      message: `Payment of ${installment.amount.toFixed(2)} AUD received. ${installment.remainingAmount.toFixed(2)} AUD remains outstanding — the report will be generated once the full ${installment.feeAmount.toFixed(2)} AUD is paid.`,
+      reportId,
+      caseReference: report.caseReference,
+      status: 'PAYMENT_AUTHORISED',
+      needsMorePayments: true,
+      feeAmount: installment.feeAmount,
+      paidAmount: installment.paidAmount,
+      remainingAmount: installment.remainingAmount,
+      fullyPaid: false,
+    });
+  } catch (error: any) {
+    console.error('Subsequent installment payment error:', error);
+    res.status(500).json({
+      error:
+        error instanceof InstallmentPaymentError
+          ? error.message
+          : error.message || 'Payment failed.',
+      ...(error instanceof InstallmentPaymentError ? { errorCode: error.code } : {}),
+    });
   }
 });
 

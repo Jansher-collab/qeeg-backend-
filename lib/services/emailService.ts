@@ -1,4 +1,5 @@
 import * as postmark from 'postmark';
+import tls from 'tls';
 
 import { getPublicBaseUrl } from '../config/publicUrl';
 import { normalizeTimeZone, formatLocalDateTime, formatLocalTimestamp } from '../utils/dateTime';
@@ -68,6 +69,113 @@ function describeCauseChain(error: unknown): string | undefined {
   return parts.length > 1 ? parts.join(' > ') : undefined;
 }
 
+interface StreamInfo {
+  name: string;
+  type: string;
+  archived: boolean;
+}
+
+let streamCache: { streams: StreamInfo[]; resolved: string; fetchedAt: number } | null = null;
+const STREAM_CACHE_TTL_MS = 15 * 60_000;
+
+async function fetchAvailableStreams(): Promise<{ streams: StreamInfo[]; error?: string }> {
+  try {
+    const client = getPostmarkClient();
+    const streams = await client.getMessageStreams(
+      new postmark.Models.MessageStreamsFilteringParameters('Transactional')
+    );
+    return {
+      streams: (streams?.MessageStreams ?? []).map((s) => ({
+        name: s.Name,
+        type: s.MessageStreamType,
+        archived: Boolean(s.ArchivedAt),
+      })),
+    };
+  } catch (error) {
+    return {
+      streams: [],
+      error: error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown stream fetch error',
+    };
+  }
+}
+
+/**
+ * Resolves the MessageStream used for outbound send attempts. Postmark's REST
+ * send API requires a stream that actually exists on the target server; sending
+ * to a stream name that does not exist (or was renamed/archived) hard-fails
+ * every message. We therefore verify the configured stream
+ * (POSTMARK_MESSAGE_STREAM, default 'outbound') against the server's real,
+ * active, transactional streams and transparently fall back to 'default' when
+ * the configured name is absent - without touching .env. Stream names are
+ * cached briefly to avoid a listing round-trip on every send.
+ */
+async function resolveMessageStream(config: { messageStream: string }): Promise<string> {
+  if (streamCache && Date.now() - streamCache.fetchedAt < STREAM_CACHE_TTL_MS) {
+    return streamCache.resolved;
+  }
+  const { streams, error } = await fetchAvailableStreams();
+  const active = streams.filter((s) => !s.archived);
+  const configured = config.messageStream || 'outbound';
+  const available = active.map((s) => `${s.name} (${s.type})`).join(', ') || '(none)';
+
+  if (active.some((s) => s.name === configured)) {
+    streamCache = { streams, resolved: configured, fetchedAt: Date.now() };
+    return configured;
+  }
+  if (error) {
+    throw new Error(`Could not list Postmark message streams for the transport audit (${error}).`);
+  }
+  // Configured stream missing on the server. The startup audit surfaces this,
+  // while the fallback keeps mail flowing on servers that only ever provisioned
+  // Postmark's built-in 'default' transactional stream.
+  const fallback = active.find((s) => s.name === 'default') ?? active.find((s) => s.type === 'Transactional');
+  if (!fallback) {
+    throw new Error(
+      `Postmark server has NO active transactional message stream; cannot send (available: ${available}).`
+    );
+  }
+  streamCache = { streams, resolved: fallback.name, fetchedAt: Date.now() };
+  console.error(
+    `[Email] Configured MessageStream '${configured}' does not exist on the Postmark server (available: ${available}); falling back to '${fallback.name}'. ` +
+      `Set POSTMARK_MESSAGE_STREAM='${fallback.name}' in .env to align config with the server.`
+  );
+  return fallback.name;
+}
+
+/**
+ * Low-level TLS probe against api.postmarkapp.com:443. The Postmark SDK talks
+ * HTTPS (TLS 1.2+) directly - there is NO SMTP hop - so a hard "connection
+ * could not be established" that is not a 401/403/422 is almost always an
+ * egress/TLS problem (host firewall, DNS, corporate MITM proxy, or missing root
+ * CAs on the host). This probe surface-exposes exactly that in the startup
+ * audit log instead of a vague "fetch failed" later.
+ */
+function probePostmarkTLS(): Promise<{ ok: boolean; cipher?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    let settled = false;
+    const finish = (result: { ok: boolean; cipher?: string; error?: string }) => {
+      if (!settled) {
+        settled = true;
+        resolve(result);
+      }
+    };
+    const socket = tls.connect(
+      { host: 'api.postmarkapp.com', port: 443, servername: 'api.postmarkapp.com', rejectUnauthorized: true },
+      () => {
+        const cipher = (socket as any)?.getCipher?.();
+        socket.end();
+        finish({ ok: true, cipher: cipher?.name });
+      }
+    );
+    socket.setTimeout(8000, () => {
+      socket.destroy();
+      finish({ ok: false, error: `TLS probe timed out after 8s (${Date.now() - started}ms).` });
+    });
+    socket.on('error', (err) => finish({ ok: false, error: `${err.name}: ${err.message}` }));
+  });
+}
+
 /**
  * Turns a Postmark delivery failure into a human-actionable root-cause
  * hypothesis. Emails are best-effort (non-blocking), so this is our primary
@@ -122,11 +230,13 @@ function logEmailFailure(error: unknown, ctx: EmailFailureContext = {}): string 
   const reason = error instanceof Error ? error.message : 'Unknown email error';
   const status = (error as any)?.status ?? (error as any)?.statusCode;
   const code = (error as any)?.code ?? (error as any)?.ErrorCode;
+  const errorClass = error instanceof Error ? error.constructor?.name ?? 'Error' : 'Unknown';
   const causeChain = describeCauseChain(error);
   const diagnosis = diagnoseEmailFault(error, { fromEmail, messageStream });
   const bits = [
-    status !== undefined ? `http=${status}` : undefined,
-    code !== undefined && code !== 0 ? `code=${code}` : undefined,
+    status !== undefined ? `httpStatus=${status}` : undefined,
+    code !== undefined && code !== 0 ? `postmarkCode=${code}` : undefined,
+    errorClass !== 'Error' ? `class=${errorClass}` : undefined,
     causeChain ? `cause=${causeChain}` : undefined,
   ].filter(Boolean);
   const detailLine = bits.length ? `${reason} (${bits.join(' ').trim()})` : reason;
@@ -163,11 +273,15 @@ async function sendEmail({
   text: string;
 }): Promise<EmailSendResult> {
   try {
-    const { serverToken, messageStream, fromEmail, fromName } = getEmailConfig();
+    const { serverToken, fromEmail, fromName } = getEmailConfig();
     if (!serverToken) {
       console.log(`[Email:log-provider] To=${to} Subject="${subject}"\n${text}`);
       return { success: true, simulated: true, messageId: `sim-${Date.now()}` };
     }
+
+    // Resolve the effective MessageStream (configured name, with a live
+    // fallback to 'default') so a stream mismatch cannot silently kill mail.
+    const messageStream = await resolveMessageStream(getEmailConfig());
 
     const res = await getPostmarkClient().sendEmail({
       From: `${fromName} <${fromEmail}>`,
@@ -191,15 +305,27 @@ async function sendEmail({
  * unreachable email path can never hide behind a silent "fetch failed" later.
  */
 export async function checkEmailConnectivity(): Promise<EmailSendResult> {
-  const { serverToken, fromEmail, messageStream } = getEmailConfig();
+  const { serverToken, fromEmail } = getEmailConfig();
   if (!serverToken) {
     console.warn('[Email] POSTMARK_SERVER_TOKEN not set - outbound email is DISABLED (messages logged only).');
     return { success: false, error: 'POSTMARK_SERVER_TOKEN is not set.' };
   }
   try {
     const server = await getPostmarkClient().getServer();
+    const { streams, error: streamError } = await fetchAvailableStreams();
+    const tlsProbe = await probePostmarkTLS();
+    const resolvedStream = await resolveMessageStream(getEmailConfig());
+    const streamList =
+      streams.map((s) => `${s.name} (${s.type}${s.archived ? ', archived' : ''})`).join(', ') || '(none)';
     console.log(
-      `[Email] Postmark reachable - server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${messageStream}, token=${maskServerToken(serverToken)}).`
+      `[Email] Postmark reachable - server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${resolvedStream}, token=${maskServerToken(serverToken)}).`
+    );
+    console.log(
+      `[Email Transport Audit] api.postmarkapp.com:443 HTTPS via Node ${process.version} | TLS probe: ` +
+        (tlsProbe.ok
+          ? `OK${tlsProbe.cipher ? ` (${tlsProbe.cipher})` : ''}`
+          : `FAILED (${tlsProbe.error ?? 'unknown'})`) +
+        ` | transactional streams: ${streamList}${streamError ? ` | stream listing error: ${streamError}` : ''}`
     );
     return { success: true };
   } catch (error) {
