@@ -70,6 +70,7 @@ function describeCauseChain(error: unknown): string | undefined {
 }
 
 interface StreamInfo {
+  id: string;
   name: string;
   type: string;
   archived: boolean;
@@ -86,6 +87,7 @@ async function fetchAvailableStreams(): Promise<{ streams: StreamInfo[]; error?:
     );
     return {
       streams: (streams?.MessageStreams ?? []).map((s) => ({
+        id: s.ID,
         name: s.Name,
         type: s.MessageStreamType,
         archived: Boolean(s.ArchivedAt),
@@ -101,45 +103,43 @@ async function fetchAvailableStreams(): Promise<{ streams: StreamInfo[]; error?:
 
 /**
  * Resolves the MessageStream used for outbound send attempts. Postmark's REST
- * send API requires a stream that actually exists on the target server; sending
- * to a stream name that does not exist (or was renamed/archived) hard-fails
- * every message. We therefore verify the configured stream
- * (POSTMARK_MESSAGE_STREAM, default 'outbound') against the server's real,
- * active, transactional streams and transparently fall back to 'default' when
- * the configured name is absent - without touching .env. Stream names are
- * cached briefly to avoid a listing round-trip on every send.
+ * send API identifies message streams by their slug/ID (e.g. 'outbound') - it
+ * REJECTS display names (e.g. 'Default Transactional Stream') with a 422. We
+ * verify the configured stream ID (POSTMARK_MESSAGE_STREAM, default 'outbound')
+ * against the server's real, active, transactional stream IDs and, when the
+ * configured value is not a valid ID, fall back to Postmark's guaranteed
+ * built-in transactional stream ID 'outbound'. Display names are never passed
+ * to the API. The listing is cached briefly to avoid a round-trip on every
+ * send.
  */
 async function resolveMessageStream(config: { messageStream: string }): Promise<string> {
   if (streamCache && Date.now() - streamCache.fetchedAt < STREAM_CACHE_TTL_MS) {
     return streamCache.resolved;
   }
   const { streams, error } = await fetchAvailableStreams();
-  const active = streams.filter((s) => !s.archived);
   const configured = config.messageStream || 'outbound';
-  const available = active.map((s) => `${s.name} (${s.type})`).join(', ') || '(none)';
+  const active = streams.filter((s) => !s.archived);
+  const available =
+    active.map((s) => `'${s.id}' ("${s.name}", ${s.type})`).join(', ') || '(none)';
 
-  if (active.some((s) => s.name === configured)) {
-    streamCache = { streams, resolved: configured, fetchedAt: Date.now() };
-    return configured;
-  }
-  if (error) {
-    throw new Error(`Could not list Postmark message streams for the transport audit (${error}).`);
-  }
-  // Configured stream missing on the server. The startup audit surfaces this,
-  // while the fallback keeps mail flowing on servers that only ever provisioned
-  // Postmark's built-in 'default' transactional stream.
-  const fallback = active.find((s) => s.name === 'default') ?? active.find((s) => s.type === 'Transactional');
-  if (!fallback) {
-    throw new Error(
-      `Postmark server has NO active transactional message stream; cannot send (available: ${available}).`
+  // A configured DISPLAY name (e.g. 'Default Transactional Stream') is never a
+  // valid stream ID, so it falls through to the guaranteed built-in 'outbound'
+  // ID instead of being mirrored back into the API and hard-failing every send.
+  const activeIds = new Set(active.map((s) => s.id));
+  const resolved = activeIds.has(configured) ? configured : 'outbound';
+
+  if (resolved !== configured) {
+    console.error(
+      `[Email] Configured POSTMARK_MESSAGE_STREAM '${configured}' is not a message stream ID on this server (stream IDs: ${available}). ` +
+        `Falling back to the built-in 'outbound' transactional stream. Set POSTMARK_MESSAGE_STREAM=outbound in .env to silence this warning.`
+    );
+  } else if (error) {
+    console.warn(
+      `[Email] Could not list Postmark message streams (${error}); using configured stream ID '${resolved}'.`
     );
   }
-  streamCache = { streams, resolved: fallback.name, fetchedAt: Date.now() };
-  console.error(
-    `[Email] Configured MessageStream '${configured}' does not exist on the Postmark server (available: ${available}); falling back to '${fallback.name}'. ` +
-      `Set POSTMARK_MESSAGE_STREAM='${fallback.name}' in .env to align config with the server.`
-  );
-  return fallback.name;
+  streamCache = { streams, resolved, fetchedAt: Date.now() };
+  return resolved;
 }
 
 /**
@@ -198,8 +198,11 @@ function diagnoseEmailFault(
   if (status === 403 || code === 405 || /sender signature/i.test(lower)) {
     return `The 'From' sender (${config.fromEmail}) is not a VERIFIED sender signature inside Postmark (or its signature/DKIM/SPF was deactivated). Restore and re-verify it at app.postmarkapp.com -> Sender Signatures, then resend.`;
   }
-  if (status === 404 || /stream.? (does not|was) not found|invalid stream|message stream/i.test(lower)) {
-    return `MessageStream '${config.messageStream}' does not exist on this Postmark server (configured via POSTMARK_MESSAGE_STREAM). Either create a stream with that exact name or set POSTMARK_MESSAGE_STREAM to the real stream name (Postmark always provides 'default').`;
+  if (status === 422 && /stream|message.? ?stream/i.test(lower) && /does not exist|not found|provided/i.test(lower)) {
+    return `Postmark rejected the outbound MessageStream (HTTP 422). The API requires the stream ID/slug (e.g. 'outbound') - display names such as 'Default Transactional Stream' are REJECTED - and the configured POSTMARK_MESSAGE_STREAM value is '${config.messageStream}'. Set POSTMARK_MESSAGE_STREAM to the exact stream ID (e.g. 'outbound') in .env.`;
+  }
+  if (status === 404 || /stream.? (does not|was) not (found|exist)|invalid stream|message stream/i.test(lower)) {
+    return `MessageStream '${config.messageStream}' could not be resolved on this Postmark server (configured via POSTMARK_MESSAGE_STREAM). Message streams are referenced by their stream ID/slug (e.g. 'outbound') - display names such as 'Default Transactional Stream' are REJECTED by the API. Set POSTMARK_MESSAGE_STREAM to a real stream ID (Postmark always provides the built-in 'outbound' transaction stream).`;
   }
   if (
     /timeout|timed out|abort/i.test(lower) ||
@@ -279,8 +282,9 @@ async function sendEmail({
       return { success: true, simulated: true, messageId: `sim-${Date.now()}` };
     }
 
-    // Resolve the effective MessageStream (configured name, with a live
-    // fallback to 'default') so a stream mismatch cannot silently kill mail.
+    // Resolve the effective MessageStream ID (configured value, defaulting to
+    // Postmark's guaranteed built-in 'outbound' transactional stream). Only
+    // stream IDs are ever passed to the API - never display names.
     const messageStream = await resolveMessageStream(getEmailConfig());
 
     const res = await getPostmarkClient().sendEmail({
@@ -316,7 +320,9 @@ export async function checkEmailConnectivity(): Promise<EmailSendResult> {
     const tlsProbe = await probePostmarkTLS();
     const resolvedStream = await resolveMessageStream(getEmailConfig());
     const streamList =
-      streams.map((s) => `${s.name} (${s.type}${s.archived ? ', archived' : ''})`).join(', ') || '(none)';
+      streams
+        .map((s) => `'${s.id}' ("${s.name}", ${s.type}${s.archived ? ', archived' : ''})`)
+        .join(', ') || '(none)';
     console.log(
       `[Email] Postmark reachable - server="${server.Name}" (id=${server.ID}); outbound mail is LIVE (from=${fromEmail}, stream=${resolvedStream}, token=${maskServerToken(serverToken)}).`
     );
