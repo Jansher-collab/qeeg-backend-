@@ -14,6 +14,7 @@
 import {
   validateProfileFields,
   validateReportRequestPayload,
+  validateSignupFieldFormats,
   REQUIRED_PROFILE_FIELDS,
   type FieldError,
 } from '../services/formValidation';
@@ -352,6 +353,173 @@ console.log('\n=== REPORT: source-bound fields are validated at the top level ==
     '...it is instead demanded on the profile, where it actually lives'
   );
 }
+
+console.log('\n=== SIGNUP ONLY: field-level format rules ===');
+
+// These rules apply to the Signup / Register form ONLY. They must not leak
+// into the portal profile form, so every case below also asserts that
+// `validateProfileFields` - which backs PUT /api/practitioner/profile - stays
+// permissive for the same input.
+const signupFormatFields = (input: Record<string, unknown>): string[] =>
+  validateSignupFieldFormats(input).errors.map((e) => e.field);
+
+/**
+ * A profile that passes `validateProfileFields` on its own. Isolation checks
+ * overlay their offending values onto THIS, so the only reason a case can fail
+ * is the format rule under test - not five unrelated blank mandatory fields.
+ */
+const COMPLETE_PROFILE = {
+  fullName: 'Dr Jane Doe',
+  professionalTitle: 'Psychologist MClinClinPsy',
+  profession: 'Clinical Psychologist',
+  providerNumber: 'PSY0001234567',
+  clinicName: 'Mindful Health',
+  practiceAddress: 'Suite 4B, 120 Collins Street, Melbourne VIC 3000',
+  phone: '+61 3 9820 1144',
+};
+
+const profileAccepts = (overrides: Record<string, unknown>): boolean =>
+  validateProfileFields({ ...COMPLETE_PROFILE, ...overrides }).passed;
+
+// ---- Phone: digits / spaces / + / - / parentheses only; NO letters ----------
+
+assert(
+  validateSignupFieldFormats({ phone: '+61 3 9820 1144' }).passed,
+  'Phone accepts an international AU format (+61 3 9820 1144)'
+);
+assert(
+  validateSignupFieldFormats({ phone: '(03) 9820-1144' }).passed,
+  'Phone accepts parentheses, hyphen and spaces'
+);
+assert(
+  signupFormatFields({ phone: '9820abc1144' }).includes('phone'),
+  'Phone rejects alphabetic letters'
+);
+assert(
+  validateSignupFieldFormats({ phone: 'abc1234567' }).errors[0]?.message ===
+    'Please enter a valid phone number without letters.',
+  'Phone letter-rejection uses its own explicit message'
+);
+assert(
+  signupFormatFields({ phone: '9820#1144' }).includes('phone'),
+  'Phone rejects other symbols (#)'
+);
+assert(
+  signupFormatFields({ phone: '9820@1144' }).includes('phone'),
+  'Phone rejects @'
+);
+assert(
+  signupFormatFields({ phone: '9820' }).includes('phone'),
+  'Phone rejects fewer than 7 digits'
+);
+assert(
+  validateSignupFieldFormats({ phone: '' }).passed,
+  'Phone reports blankness as "required" (via validateProfileFields), not as a format error'
+);
+
+// ---- Provider number: alphanumeric ALLOWED ------------------------------
+
+assert(
+  validateSignupFieldFormats({ providerNumber: 'MED0001234567' }).passed,
+  'Provider number accepts a letter-prefixed AHPRA number (MED0001234567)'
+);
+assert(
+  validateSignupFieldFormats({ providerNumber: 'PSY000123' }).passed,
+  'Provider number accepts an all-letter-prefixed number'
+);
+assert(
+  validateSignupFieldFormats({ providerNumber: '1234567' }).passed,
+  'Provider number accepts digits only'
+);
+assert(
+  validateSignupFieldFormats({ providerNumber: 'PR-88921-VIC / PSY000123' }).passed,
+  'Provider number accepts the documented "PR-88921-VIC / PSY000123" style'
+);
+assert(
+  signupFormatFields({ providerNumber: 'MED#000123' }).includes('providerNumber'),
+  'Provider number rejects stray symbols'
+);
+assert(
+  signupFormatFields({ providerNumber: 'MED000$123' }).includes('providerNumber'),
+  'Provider number rejects $'
+);
+
+// ---- Email ---------------------------------------------------------------
+
+assert(
+  validateSignupFieldFormats({ email: 'practitioner@clinic.com.au' }).passed,
+  'Email accepts a normal business address'
+);
+assert(validateSignupFieldFormats({ email: 'a@b.co' }).passed, 'Email accepts a short TLD');
+assert(signupFormatFields({ email: 'practitioner' }).includes('email'), 'Email rejects a bare word');
+assert(signupFormatFields({ email: 'practitioner@' }).includes('email'), 'Email rejects a missing domain');
+assert(signupFormatFields({ email: 'practitioner@clinic' }).includes('email'), 'Email rejects a missing TLD');
+assert(signupFormatFields({ email: 'a@b@c.com' }).includes('email'), 'Email rejects two @ signs');
+assert(signupFormatFields({ email: '.practitioner@x.com' }).includes('email'), 'Email rejects a leading dot in the local part');
+assert(signupFormatFields({ email: 'practitioner.@x.com' }).includes('email'), 'Email rejects a trailing dot in the local part');
+assert(signupFormatFields({ email: 'practitioner..b@x.com' }).includes('email'), 'Email rejects a doubled dot in the local part');
+assert(
+  validateSignupFieldFormats({ email: 'practitioner@x.com ' }).passed,
+  'Email tolerates surrounding whitespace'
+);
+assert(
+  validateSignupFieldFormats({ email: '  practitioner@x.com  ' }).passed,
+  'Email is trimmed before validation'
+);
+assert(validateSignupFieldFormats({ email: '' }).passed, 'Blank email reports "required", not a format error');
+
+// ---- Password -------------------------------------------------------------
+
+assert(
+  validateSignupFieldFormats({ password: '12345678' }).passed,
+  'Password accepts exactly 8 characters'
+);
+assert(signupFormatFields({ password: '1234567' }).includes('password'), 'Password rejects 7 characters');
+assert(validateSignupFieldFormats({ password: '' }).passed, 'Blank password reports "required", not a format error');
+
+// ---- Multiple problems are reported together ------------------------------
+
+const multi = signupFormatFields({
+  phone: 'abc',
+  providerNumber: 'BAD#',
+  email: 'nope',
+  password: '1',
+});
+assert(
+  multi.length === 4 && ['phone', 'providerNumber', 'email', 'password'].every((k) => multi.includes(k)),
+  'All four format problems are reported in a single pass'
+);
+
+// ---- ISOLATION: these rules must not reach the profile-update form ---------
+
+// Probe with a phone that SATISFIES the shared digit-count guard (11 digits)
+// but still violates the signup-only character rule (it contains letters).
+// Using 'abc' here would prove nothing: it has 0 digits, so BOTH validators
+// reject it and the assertion would pass for the wrong reason.
+const LETTERED_BUT_LONG_ENOUGH = '9820abc1144';
+
+assert(
+  validateSignupFieldFormats({ phone: LETTERED_BUT_LONG_ENOUGH }).errors.some((e) => e.field === 'phone'),
+  'A lettered-but-digit-rich phone is rejected by the signup rules'
+);
+assert(
+  profileAccepts({ phone: LETTERED_BUT_LONG_ENOUGH }),
+  'ISOLATION: that same phone is still tolerated by the profile-update form'
+);
+assert(
+  profileAccepts({
+    phone: LETTERED_BUT_LONG_ENOUGH,
+    providerNumber: 'BAD#',
+    email: 'nope',
+    password: '1',
+  }),
+  'ISOLATION: the portal profile form is NOT affected by any signup format rule'
+);
+// The shared digit-count rule still applies on BOTH paths.
+assert(
+  !profileAccepts({ phone: '9820' }),
+  'The pre-existing 7-digit floor is preserved on the profile form'
+);
 
 console.log(`\nTEST RESULTS: ${passed} / ${passed + failed} tests passed.`);
 if (failed > 0) {

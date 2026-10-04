@@ -8,7 +8,7 @@ import {
   verifyTOTPCode,
   generateBackupCodes,
 } from './authService';
-import { validateProfileFields, type FieldError } from './formValidation';
+import { validateProfileFields, validateSignupFieldFormats, type FieldError } from './formValidation';
 
 /**
  * Deferred (pending) practitioner registration.
@@ -154,15 +154,13 @@ export async function stagePendingRegistration(
   const email = (input.email || '').toLowerCase().trim();
   const password = input.password || '';
 
-  if (!email || !password) {
-    return { ok: false, status: 400, error: 'Email and password are required.' };
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, status: 400, error: 'A valid email address is required.' };
-  }
-  if (password.length < 8) {
-    return { ok: false, status: 400, error: 'Password must be at least 8 characters long.' };
-  }
+  // NOTE: email and password are NOT in REQUIRED_PROFILE_FIELDS, because that
+  // list is shared with PUT /api/practitioner/profile. Their presence is
+  // therefore asserted here and surfaced as 422 field-level errors below, so
+  // the signup form can highlight the specific inputs. This block is a
+  // defensive backstop only - it guarantees `email`/`password` are usable
+  // strings before any hashing or database access; the user-facing message
+  // always comes from the fieldErrors path.
 
   // Mandatory practitioner fields. Every one of these lands in the generated
   // report header, and `professionalTitle` is specifically required by
@@ -171,13 +169,45 @@ export async function stagePendingRegistration(
   // Reported as 422 with a per-field breakdown so the form can highlight the
   // specific inputs rather than showing one opaque message.
   const profileCheck = validateProfileFields(input as unknown as Record<string, unknown>);
-  if (!profileCheck.passed) {
+
+  // Signup-only field FORMAT rules (phone character set, provider-number
+  // character set, email shape, password length). Kept separate from the
+  // presence check above so a blank field reports only "required", never both
+  // a missing-value and a format complaint.
+  const formatCheck = validateSignupFieldFormats(input as unknown as Record<string, unknown>);
+
+  // Presence for the two auth fields owned by this function, matching the
+  // wording the frontend uses so the same value never produces two messages.
+  const authPresenceErrors: FieldError[] = [];
+  if (!email) {
+    authPresenceErrors.push({
+      field: 'email',
+      label: 'Login & Notification Email',
+      message: 'Login & Notification Email is required.',
+    });
+  }
+  if (!password) {
+    authPresenceErrors.push({
+      field: 'password',
+      label: 'Password',
+      message: 'Password is required.',
+    });
+  }
+
+  const fieldErrors = [...profileCheck.errors, ...formatCheck.errors, ...authPresenceErrors];
+  if (fieldErrors.length > 0) {
     return {
       ok: false,
       status: 422,
-      error: 'Please complete every required field before continuing.',
-      fieldErrors: profileCheck.errors,
+      error: 'Please correct the highlighted fields.',
+      fieldErrors,
     };
+  }
+
+  // Defensive: unreachable while the checks above hold, but guarantees the
+  // values are safe for bcrypt and the unique-email lookup regardless.
+  if (!email || !password) {
+    return { ok: false, status: 400, error: 'Email and password are required.' };
   }
 
   const existingUser = await prisma.user.findUnique({ where: { email } });

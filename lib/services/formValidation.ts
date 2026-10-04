@@ -89,9 +89,117 @@ export function validateProfileFields(input: Record<string, unknown>): Validatio
     }
   }
 
+  // Digit-count sanity check. This lives on the shared profile validator
+  // (so it applies at signup AND on profile update); the stricter
+  // character-class rules are signup-only, in validateSignupFieldFormats.
   const phone = typeof input.phone === 'string' ? input.phone.trim() : '';
   if (!isBlank(phone) && phone.replace(/\D/g, '').length < 7) {
     push(errors, 'phone', 'Practice Contact Phone', 'Practice Contact Phone must contain at least 7 digits.');
+  }
+
+  return { passed: errors.length === 0, errors };
+}
+
+/* ------------------------------------------------------------------------ */
+/* Signup / Register form - field FORMAT rules                               */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * SCOPE: called by `stagePendingRegistration` ONLY. This is intentionally NOT
+ * folded into `validateProfileFields`, because that function also backs
+ * `PUT /api/practitioner/profile` and these stricter character rules are
+ * specified for the signup form alone. Keeping them separate guarantees the
+ * portal profile form, the report checklist, and the payment/billing path are
+ * unaffected.
+ *
+ * Mirrored by `frontend/lib/signupValidation.ts`. The two repositories cannot
+ * import from each other, so these must be kept in sync - `formValidation.test.ts`
+ * locks the server-side copy.
+ */
+
+/** Phone accepts digits, spaces, +, - and parentheses. Letters are rejected. */
+const PHONE_ALLOWED = /^[0-9+()\-\s]+$/;
+const PHONE_HAS_LETTER = /[A-Za-z]/;
+
+/**
+ * Provider number accepts letters AND digits (e.g. AHPRA "MED0001234567", or
+ * "PR-88921-VIC / PSY000123"). Only stray symbols are rejected.
+ */
+const PROVIDER_NUMBER_ALLOWED = /^[A-Za-z0-9\s\-\/]+$/;
+
+/** Stricter than a bare shape check: a doubled or edge dot is always a typo. */
+const EMAIL_SHAPE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
+const EMAIL_BAD_LOCAL_DOTS = /^\.|\.$|\.\./;
+
+/** Minimum acceptable password length. */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** Minimum number of digits a plausible phone number must contain. */
+const MIN_PHONE_DIGITS = 7;
+
+/**
+ * Applies the signup form's field-level format rules.
+ *
+ * Presence is handled by `validateProfileFields`, so this only formats fields
+ * that actually have a value - a blank field must not report both "required"
+ * and a format complaint.
+ */
+export function validateSignupFieldFormats(input: Record<string, unknown>): ValidationResult {
+  const errors: FieldError[] = [];
+
+  const phone = typeof input.phone === 'string' ? input.phone.trim() : '';
+  if (!isBlank(phone)) {
+    if (PHONE_HAS_LETTER.test(phone)) {
+      push(errors, 'phone', 'Practice Contact Phone', 'Please enter a valid phone number without letters.');
+    } else if (!PHONE_ALLOWED.test(phone)) {
+      push(
+        errors,
+        'phone',
+        'Practice Contact Phone',
+        'Please enter a valid phone number (digits, spaces, +, - and parentheses only).'
+      );
+    } else if (phone.replace(/\D/g, '').length < MIN_PHONE_DIGITS) {
+      push(
+        errors,
+        'phone',
+        'Practice Contact Phone',
+        `Practice Contact Phone must contain at least ${MIN_PHONE_DIGITS} digits.`
+      );
+    }
+  }
+
+  const providerNumber =
+    typeof input.providerNumber === 'string' ? input.providerNumber.trim() : '';
+  if (!isBlank(providerNumber) && !PROVIDER_NUMBER_ALLOWED.test(providerNumber)) {
+    push(
+      errors,
+      'providerNumber',
+      'Registration / Provider Number',
+      'Please use letters, numbers, spaces, hyphens or slashes only (e.g. MED0001234567).'
+    );
+  }
+
+  const email = typeof input.email === 'string' ? input.email.trim() : '';
+  if (!isBlank(email)) {
+    const local = email.split('@')[0] ?? '';
+    if (EMAIL_BAD_LOCAL_DOTS.test(local) || !EMAIL_SHAPE.test(email)) {
+      push(
+        errors,
+        'email',
+        'Login & Notification Email',
+        'Please enter a valid email address (e.g. practitioner@clinic.com.au).'
+      );
+    }
+  }
+
+  const password = typeof input.password === 'string' ? input.password : '';
+  if (!isBlank(password) && password.length < MIN_PASSWORD_LENGTH) {
+    push(
+      errors,
+      'password',
+      'Password',
+      `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`
+    );
   }
 
   return { passed: errors.length === 0, errors };
