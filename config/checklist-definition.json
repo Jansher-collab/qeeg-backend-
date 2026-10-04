@@ -188,11 +188,11 @@
           ]
         },
         {
-          "key": "handedness",
-          "label": "Dominant Handedness",
-          "type": "select",
-          "required": false,
-          "source": "case.handedness",
+"key": "handedness",
+  "label": "Dominant Handedness *",
+  "type": "select",
+  "required": true,
+  "source": "case.handedness",
           "options": [
             { "value": "RIGHT", "label": "Right" },
             { "value": "LEFT", "label": "Left" },

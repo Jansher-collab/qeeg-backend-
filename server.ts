@@ -72,6 +72,7 @@ import {
   InstallmentPaymentError,
 } from './lib/services/installmentPayment';
 import { withTimeout } from './lib/services/timeout';
+import { validateReportRequestPayload, validateProfileFields } from './lib/services/formValidation';
 import {
   LEGAL_DOCUMENT_TYPES,
   getCurrentLegalDocuments,
@@ -376,7 +377,11 @@ app.post('/api/auth/signup/pending', authRateLimit, async (req: Request, res: Re
     const result = await stagePendingRegistration(req.body || {});
 
     if (!result.ok) {
-      return res.status(result.status).json({ error: result.error });
+      return res.status(result.status).json({
+        error: result.error,
+        // Per-field breakdown (422 only) so the form can highlight each input.
+        ...('fieldErrors' in result && result.fieldErrors ? { fieldErrors: result.fieldErrors } : {}),
+      });
     }
 
     res.status(200).json({
@@ -1093,6 +1098,18 @@ app.put('/api/practitioner/profile', authenticateUser, async (req: Request, res:
     const user = (req as any).user;
     const body = req.body;
 
+    // These fields feed the generated report header and are required by
+    // checklist-definition.json, so a blank here would leave the practitioner
+    // unable to submit a case. Validated before any write.
+    const profileCheck = validateProfileFields(body || {});
+    if (!profileCheck.passed) {
+      return res.status(422).json({
+        error: 'Please complete every required profile field.',
+        errorCode: 'INCOMPLETE_PROFILE',
+        fieldErrors: profileCheck.errors,
+      });
+    }
+
     const updatedProfile = await prisma.practitionerProfile.upsert({
       where: { userId: user.id },
       update: {
@@ -1271,6 +1288,24 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
   try {
     const user = (req as any).user;
     const payload = req.body;
+
+    // Mandatory-field gate. Runs FIRST, before the payment plan is resolved and
+    // before anything is authorised at PayPal, so an incomplete request can
+    // never reach the money path. The browser already blocks this; the browser
+    // is untrusted, and every clinical field here is nullable in the database.
+    const fieldCheck = validateReportRequestPayload(payload || {});
+    if (!fieldCheck.passed) {
+      console.warn(
+        `[submit] Rejected incomplete case ${payload?.caseReference ?? '(none)'} (user ${user.id}): ${fieldCheck.errors
+          .map((e) => e.field)
+          .join(', ')}`
+      );
+      return res.status(422).json({
+        error: 'Please complete every required field before submitting.',
+        errorCode: 'INCOMPLETE_REQUEST',
+        fieldErrors: fieldCheck.errors,
+      });
+    }
 
     const reportFee = await getReportFeeAUD();
     let authId = payload.paypalAuthorizationId;

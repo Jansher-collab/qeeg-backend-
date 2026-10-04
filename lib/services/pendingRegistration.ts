@@ -8,6 +8,7 @@ import {
   verifyTOTPCode,
   generateBackupCodes,
 } from './authService';
+import { validateProfileFields, type FieldError } from './formValidation';
 
 /**
  * Deferred (pending) practitioner registration.
@@ -124,7 +125,7 @@ export interface StagedRegistrationResult {
 
 export type StageResult =
   | StagedRegistrationResult
-  | { ok: false; status: number; error: string };
+  | { ok: false; status: number; error: string; fieldErrors?: FieldError[] };
 
 function normaliseLegalAcceptances(input: unknown): { type: string; version: string }[] {
   if (!Array.isArray(input)) return [];
@@ -161,6 +162,22 @@ export async function stagePendingRegistration(
   }
   if (password.length < 8) {
     return { ok: false, status: 400, error: 'Password must be at least 8 characters long.' };
+  }
+
+  // Mandatory practitioner fields. Every one of these lands in the generated
+  // report header, and `professionalTitle` is specifically required by
+  // checklist-definition.json - accepting a blank there would create a
+  // practitioner who can never satisfy the checklist at submission time.
+  // Reported as 422 with a per-field breakdown so the form can highlight the
+  // specific inputs rather than showing one opaque message.
+  const profileCheck = validateProfileFields(input as unknown as Record<string, unknown>);
+  if (!profileCheck.passed) {
+    return {
+      ok: false,
+      status: 422,
+      error: 'Please complete every required field before continuing.',
+      fieldErrors: profileCheck.errors,
+    };
   }
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
