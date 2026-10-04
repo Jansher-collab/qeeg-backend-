@@ -1,0 +1,146 @@
+{
+  "caseReference": "CASE-N69JY",
+  "confidenceScore": 0.79,
+  "reliabilityScore": 0.99,
+  "overallSummary": "QEEG correlation analysis completed for case CASE-N69JY. Findings mapped across 5 clinical domains with validated peer-reviewed literature citations.",
+  "demographics": {
+    "age": 63,
+    "gender": "FEMALE",
+    "handedness": "RIGHT"
+  },
+  "domains": [
+    {
+      "domain": "Medical",
+      "summary": "Neurological electro-anatomical findings and EEG band power deviations mapped against medical neuro-pathology literature.",
+      "keyIndicators": [
+        "Frontal Theta/Beta elevation correlated with attentional circuit dynamics.",
+        "Occipital Alpha peak frequency evaluation within age-normative range.",
+        "Absence of paroxysmal epileptiform spike-wave discharge patterns."
+      ],
+      "recommendations": [
+        "Evaluate underlying sleep architecture and metabolic screening.",
+        "Consider follow-up neurology consultation if focal slowing persists."
+      ],
+      "literatureCitations": [
+        {
+          "id": "PMID-40750920",
+          "title": "Newborn brain development comparison of plateau and plain regions: insights from quantitative EEG.",
+          "authors": [
+            "Zhao X",
+            "Ze B",
+            "Li J",
+            "Huang L",
+            "Tan X"
+          ],
+          "journal": "Pediatr Res",
+          "year": 2026,
+          "abstract": "PubMed Article (PMID: 40750920) on Newborn brain development comparison of plateau and plain regions: insights from quantitative EEG.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/40750920/",
+          "source": "PubMed",
+          "doi": "10.1038/s41390-025-04220-9"
+        },
+        {
+          "id": "PMID-35528740",
+          "title": "Using Single-Photon Emission Computerized Tomography on Patients With Positive Quantitative Electroencephalogram to Evaluate Chronic Mild Traumatic Brain Injury With Persistent Symptoms.",
+          "authors": [
+            "Gosset A",
+            "Wagman H",
+            "Pavel D",
+            "Cohen PF",
+            "Tarzwell R"
+          ],
+          "journal": "Front Neurol",
+          "year": 2022,
+          "abstract": "PubMed Article (PMID: 35528740) on Using Single-Photon Emission Computerized Tomography on Patients With Positive Quantitative Electroencephalogram to Evaluate Chronic Mild Traumatic Brain Injury With Persistent Symptoms.",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/35528740/",
+          "source": "PubMed",
+          "doi": "10.3389/fneur.2022.704844"
+        }
+      ]
+    },
+    {
+      "domain": "Psychological",
+      "summary": "Cognitive control, impulse regulation, and executive processing metrics integrated with TOVA performance data.",
+      "keyIndicators": [
+        "TOVA ADHD Index score: 5.008500662289024",
+        "Response Time Variability (RTV) elevated during second quarter of testing.",
+        "Impulsivity score correlates with sensorimotor rhythm (SMR) power dynamics."
+      ],
+      "recommendations": [
+        "Implement cognitive behavioral strategies targeting task persistence.",
+        "Monitor working memory load during structured executive tasks."
+      ],
+      "literatureCitations": []
+    },
+    {
+      "domain": "Nutritional",
+      "summary": "Metabolic co-factors, neurochemical precursors, and micronutrient support targets influencing cortical arousal state.",
+      "keyIndicators": [
+        "Elevated slow-wave activity potentially modulated by magnesium/vitamin D status.",
+        "Neurochemical precursor demand associated with catecholamine synthesis pathways."
+      ],
+      "recommendations": [
+        "Screen serum Ferritin, Vitamin D3, B-complex, and Omega-3 index.",
+        "Consider targeted supplementation under medical supervision to support neurotransmitter synthesis."
+      ],
+      "literatureCitations": []
+    },
+    {
+      "domain": "Lifestyle",
+      "summary": "Circadian rhythm stability, sleep quality, physical activity, and stress reactivity factors influencing EEG stability.",
+      "keyIndicators": [
+        "Sleep onset delay indicators observed in clinical checklist correlates.",
+        "Autonomic arousal index consistent with high nocturnal stress reactivity."
+      ],
+      "recommendations": [
+        "Establish consistent sleep-wake schedule with morning sunlight exposure (10,000 lux).",
+        "Incorporate daily moderate aerobic exercise (30 mins) to enhance neuroplasticity.",
+        "Implement evening blue-light restriction 2 hours prior to sleep."
+      ],
+      "literatureCitations": []
+    },
+    {
+      "domain": "Neurofeedback Treatment-Response",
+      "summary": "Evidence-based protocol recommendations, frequency band targets, and anticipated treatment response trajectories.",
+      "keyIndicators": [
+        "Frontal Cz/Fz Theta (4-8 Hz) down-training protocol indicated.",
+        "Sensorimotor Rhythm (SMR 12-15 Hz) enhancement at C4-A2 to support sensorimotor gating.",
+        "Coherence optimization protocol indicated across bilateral parietal networks."
+      ],
+      "recommendations": [
+        "Initiate 20-30 session neurofeedback protocol at 2 sessions per week.",
+        "Re-assess QEEG after 15 sessions to measure cortical impedance and band power normalization."
+      ],
+      "conflictOfInterestDisclosure": "Conflict of Interest Disclosure: Neurofeedback treatment options presented herein are based on published literature and protocol standardisations. The platform maintains no financial interest, sponsorship, or commercial endorsement of specific equipment manufacturers, software vendors, or proprietary neurofeedback systems.",
+      "literatureCitations": []
+    }
+  ],
+  "aiDisclaimer": "Disclaimer: This report was generated using automated analytical correlation pipelines and synthesized literature databases. It is intended strictly as a decision-support tool for licensed practitioners and does not constitute formal medical diagnosis or individual clinical advice.",
+  "knowledgeBase": {
+    "answer": "## Relevance to QEEG-Guided Neurofeedback\n\nThe clinical presentation you describe is **highly relevant** to QEEG-guided neurofeedback assessment and intervention. Here's why, based on the knowledge base:\n\n### Direct Domain Alignment\n\n[Source 1] confirms that the QEEG.com.au platform quantifies symptoms across **eleven standardised domains**, several of which directly match your presentation:\n\n1. **\"Inattention — sustained focus deficit, distractibility, carelessness\"** [Source 1] — maps precisely to your \"inattention distractibility\" and ADHD attention concerns.\n\n2. **\"Anxiety — generalised worry, autonomic hyperarousal, somatic tension\"** [Source 1] — corresponds to your \"anxiety beta asymmetry\" component.\n\n3. **\"Executive Function / Organisation — working memory, cognitive inflexibility\"** [Source 1] — directly addresses your \"executive function working memory\" and broader executive function deficits.\n\n### Objective Measurement Integration\n\nYour mention of **\"TOVA sustained attention d-prime\"** is particularly relevant. [Source 1] notes that the platform correlates \"quantitative EEG and TOVA continuous-performance data\" against clinical symptom domains. [Source 4] further specifies that \"TOVA continuous-performance task output\" is used in reliability score computation and forms part of the clinical decision-support framework.\n\n### Multi-Domain Assessment\n\nThe presentation encompasses **multiple overlapping domains** (attention, executive function, anxiety), which aligns with the platform's holistic approach to correlating QEEG findings with comprehensive symptom profiles across all eleven domains using a **0–4 Likert scale** [Source 1].\n\n### Important Limitation\n\n[Source 1] explicitly states: \"Correlation findings are clinical decision-support outputs; they are **not a substitute for independent clinical judgement**.\" The platform provides correlation synthesis, not diagnostic conclusions or treatment prescriptions.\n\n**In summary:** This clinical profile fits squarely within the scope of QEEG-guided neurofeedback assessment offered by the platform.",
+    "grounded": true,
+    "sourceChunks": [
+      {
+        "sourceFile": "03-symptom-domains.md",
+        "title": "Symptom Domains and Correlation Synthesis",
+        "excerpt": "# Symptom Domains and Correlation Synthesis\n\nThe QEEG.com.au platform quantifies clinical symptoms across eleven standardised domains captured on the intake checklist and correlated against quantitative EEG and TOVA continuous-performance data.\n\n## Domain List\n\n1. Inattention — sustained focus deficit, distractibility, carelessness.\n2. Hyperactivity / Impulsivity — motor restlessness, interrupted-verbal behaviour.\n3. Anxiety — generalised worry, autonomic hyperarousal, somatic tension.\n4. Mood /"
+      },
+      {
+        "sourceFile": "04-payment-billing-lifecycle.md",
+        "title": "Payment and Billing Lifecycle",
+        "excerpt": "# Payment and Billing Lifecycle\n\nQEEG.com.au integrates a PayPal REST API for payment holds, captures, and voids.\n\n## Fee Hold on Submission\n\nAt submission, a $65.00 AUD authorisation hold is created via the PayPal Orders V2 capture flow. Funds are not moved from the practitioner's account at submission time; they are captured only once generation has succeeded and the report has been verified.\n\n## Capture on Approval and Generation\n\nFollowing admin approval and successful report generation, the"
+      },
+      {
+        "sourceFile": "01-zero-retention-policy.md",
+        "title": "Zero-Retention Data Policy",
+        "excerpt": "# Zero-Retention Data Policy\n\nQEEG.com.au operates a strict zero-retention data policy in accordance with the Australian Privacy Act 1988 (Privacy Principles 1 to 13, with particular focus on Principle 11 — Security of Personal Information).\n\n## Patient Data Minimisation\n\nThe platform never requests, stores, or processes patient full names, birth dates, addresses, or any other directly identifying personal information. Referring practitioners record only a unique Case Reference and basic demogra"
+      },
+      {
+        "sourceFile": "02-reliability-and-deidentification.md",
+        "title": "Reliability Scoring and De-Identification Gate",
+        "excerpt": "# Reliability Scoring and De-Identification Gate\n\nEvery report submission is validated by a server-side reliability and de-identification quality gate before it is accepted.\n\n## Mandatory Threshold\n\nThe mandatory reliability threshold is 0.80. Submissions scoring below this threshold are rejected, the associated PayPal authorisation is voided, and no data is retained.\n\n## Reliability Score Computation\n\nThe reliability score is computed from the TOVA continuous-performance task output and the cli"
+      }
+    ]
+  },
+  "compiledAt": "2026-10-04T10:42:11.919Z"
+}

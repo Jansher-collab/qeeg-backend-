@@ -14,7 +14,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "kb:ingest": "node --import tsx/esm scripts/ingest-kb.ts",
-    "test": "echo \"Running backend tests...\""
+    "test": "tsx --test lib/tests/paymentGate.test.ts lib/tests/paypalOrderAmount.test.ts lib/tests/backendPipeline.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -67,6 +67,8 @@ import { processReportGeneration, processReportVoid } from './lib/services/repor
 import {
   capturePaymentInstallment,
   getPaymentProgress,
+  buildPaymentGate,
+  resolveOrderAmount,
   InstallmentPaymentError,
 } from './lib/services/installmentPayment';
 import { withTimeout } from './lib/services/timeout';
@@ -1033,7 +1035,13 @@ app.get('/api/practitioner/reports', authenticateUser, async (req: Request, res:
       where: { submittingPractitionerId: user.id },
       orderBy: { createdAt: 'desc' },
     });
-    res.json({ reports });
+    // Attach the authoritative payment gate to every row. The client must NOT
+    // re-derive "is this paid?" from `status` - that is exactly how an underpaid
+    // case came to render a "Ready" badge and an enabled download button.
+    // downloadEligible requires a finished analysis AND the full fee.
+    res.json({
+      reports: reports.map((r) => ({ ...r, paymentGate: buildPaymentGate(r) })),
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch reports.' });
   }
@@ -1064,7 +1072,12 @@ app.get('/api/practitioner/reports', authenticateUser, async (req: Request, res:
           updatedAt: true,
         },
       });
-      res.json({ reports });
+      // Each row keeps its own paymentsJson ledger so the table can show the amount
+      // actually captured in each transaction, rather than implying the full
+      // fee was charged on an earlier, smaller capture.
+      res.json({
+        reports: reports.map((r) => ({ ...r, paymentGate: buildPaymentGate(r) })),
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to fetch billing history.' });
     }
@@ -1180,7 +1193,28 @@ app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: 
         errorCode: 'REPORT_ALREADY_PAID',
       });
     }
-    const orderAmount = requestedAmount !== undefined ? Math.min(requestedAmount, remaining) : remaining;
+
+// Payment plan for THIS order. 'installments' means our 4-stage ladder, so the
+    // order is hard-capped at a single stage ($16.25) no matter what the client
+    // asks for. PayPal's own Pay in 4 is disabled at the SDK layer, so a stage is
+    // captured whole rather than re-split by PayPal.
+    const paymentPlan: 'full' | 'installments' =
+      req.body?.paymentPlan === 'full' ? 'full' : 'installments';
+
+    // resolveOrderAmount applies the stage cap AFTER the requested amount, so a
+    // tampered/over-large `amount` cannot inflate a "stage" order to the fee.
+    const { amount: orderAmount, stageAmount, clampedToStage } = resolveOrderAmount({
+      remainingAmount: remaining,
+      requestedAmount,
+      plan: paymentPlan,
+    });
+
+    if (clampedToStage) {
+      console.warn(
+  `[payments/orders] Clamped requested ${requestedAmount} to one stage ${stageAmount.toFixed(2)} for case ${effectiveCaseRef} (plan=installments).`
+      );
+    }
+
     const amountAfterOrder = Math.max(0, Math.round((remaining - orderAmount) * 100) / 100);
 
     const created = await createPayPalOrder(effectiveCaseRef, orderAmount);
@@ -1193,14 +1227,23 @@ app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: 
     }
 
     console.info(
-      `[payments/orders] Issued fresh PayPal order ${created.orderId} for case ${effectiveCaseRef} (${created.amount} ${created.currency}, user ${user.id}).`
+      `[payments/orders] Issued fresh PayPal order ${created.orderId} for case ${effectiveCaseRef} (${created.amount} ${created.currency}, outstanding ${remaining.toFixed(2)}, user ${user.id}).`
     );
 
-    await logActivity({
+await logActivity({
       userId: user.id,
       caseReference: effectiveCaseRef,
       action: 'PAYPAL_ORDER_CREATED',
-      details: { orderId: created.orderId, amount: orderAmount, paidAmount: paid, feeAmount: fee, remainingAmount: remaining },
+      details: {
+      orderId: created.orderId,
+        amount: orderAmount,
+        paidAmount: paid,
+        feeAmount: fee,
+        remainingAmount: remaining,
+     clampedToStage,
+        stageAmount,
+        paymentPlan,
+      },
       ipAddress: req.ip || '127.0.0.1',
     });
 
@@ -1210,7 +1253,9 @@ app.post('/api/payments/orders', authenticateUser, submitRateLimit, async (req: 
       currency: created.currency,
       paidAmount: paid,
       feeAmount: fee,
-      remainingAmount: amountAfterOrder,
+remainingAmount: amountAfterOrder,
+   stageAmount,
+      paymentPlan,
       fullyPaid: Math.abs(orderAmount - remaining) < 0.005,
     });
   } catch (error: any) {
@@ -1230,13 +1275,22 @@ app.post('/api/reports/submit', authenticateUser, submitRateLimit, async (req: R
     const reportFee = await getReportFeeAUD();
     let authId = payload.paypalAuthorizationId;
 
-    // Optional per-installment amount for THIS transaction (defaults to the
-    // full fee). Cumulative paidAmount is tracked on the report; generation is
-    // on HOLD until paidAmount reaches the fee.
-    const paymentInstallmentAmount =
+// Amount captured for THIS transaction. On the 'installments' plan this is ONE
+    // stage ($16.25) and the report is created still unpaid; on 'full' it is the
+    // whole fee and the report unlocks immediately. Resolved through the SAME
+    // resolveOrderAmount helper the order-creation endpoint uses, so the
+    // authorised amount can never diverge from the order PayPal approved.
+    const paymentPlan: 'full' | 'installments' =
+      payload.paymentPlan === 'full' ? 'full' : 'installments';
+    const requestedInstallmentAmount =
       typeof payload.amount === 'number' && payload.amount > 0
-        ? Math.min(Math.round(payload.amount * 100) / 100, reportFee)
-        : reportFee;
+        ? Math.round(payload.amount * 100) / 100
+        : undefined;
+    const paymentInstallmentAmount = resolveOrderAmount({
+      remainingAmount: reportFee,
+      requestedAmount: requestedInstallmentAmount,
+      plan: paymentPlan,
+    }).amount;
 
     // Preferred flow: the frontend hands over the approved (but not yet
     // authorised) order id so the SDK popup is never held open across our
@@ -1476,6 +1530,9 @@ app.post('/api/reports/:id/pay', authenticateUser, submitRateLimit, async (req: 
     const orderId = typeof req.body?.paypalOrderId === 'string' ? req.body.paypalOrderId.trim() : '';
     const requestedAmount =
       typeof req.body?.amount === 'number' && req.body.amount > 0 ? Math.round(req.body.amount * 100) / 100 : undefined;
+// Same server-side stage cap as the other two payment paths.
+    const paymentPlan: 'full' | 'installments' =
+      req.body?.paymentPlan === 'full' ? 'full' : 'installments';
 
     const report = await prisma.qeeqReport.findUnique({
       where: { id: reportId },
@@ -1525,10 +1582,16 @@ app.post('/api/reports/:id/pay', authenticateUser, submitRateLimit, async (req: 
       return res.status(400).json({ error: 'A valid PayPal order id is required.', errorCode: 'PAYMENT_FAILED' });
     }
 
-    const payAmount =
-      requestedAmount !== undefined
-        ? Math.min(requestedAmount, progress.remainingAmount)
-        : progress.remainingAmount;
+// Amount for a subsequent STAGE on an existing report: one stage of the
+    // ladder, capped at what is still outstanding (never the original fee).
+    // A client claiming 'installments' while requesting the full remaining
+    // balance still only gets ONE stage - otherwise a single "pay next stage"
+    // click would capture the whole balance and bypass the ladder.
+    const payAmount = resolveOrderAmount({
+      remainingAmount: progress.remainingAmount,
+      requestedAmount,
+      plan: paymentPlan,
+    }).amount;
 
     const authResult = await authorizePayPalOrder(orderId, {
       caseReference: report.caseReference,
@@ -1787,6 +1850,23 @@ app.get('/api/reports/:id/download', async (req: Request, res: Response) => {
         error: 'Report is not ready for download yet.',
       });
     }
+    // Download authorization requires FULL payment. buildPaymentGate is the one
+    // shared definition used by the generation pipeline and the listing
+    // endpoints, so this can never disagree with what the table showed the user.
+    const gate = buildPaymentGate(report);
+    if (!gate.fullyPaid) {
+      return res.status(409).json({
+        error:
+          `Report payment is incomplete: ${gate.paidAmount.toFixed(2)} AUD paid of ` +
+          `${gate.feeAmount.toFixed(2)} AUD. Download will be available once all ` +
+          'installments are completed and the full fee has been received.',
+        paidAmount: gate.paidAmount,
+        feeAmount: gate.feeAmount,
+        remainingAmount: gate.remainingAmount,
+        paymentState: gate.paymentState,
+      });
+    }
+
 
     // Two-phase download protocol (phase 1): claim the report so findings are
     // served to exactly one downloader, and return the findings WITHOUT
@@ -1871,6 +1951,24 @@ app.post('/api/reports/:id/download/complete', async (req: Request, res: Respons
 
     if (report.status !== 'COMPLETED') {
       return res.status(409).json({ error: 'Report is not ready for download yet.' });
+    }
+
+    // Same gate as phase 1, re-checked here on purpose. This endpoint performs
+    // the irreversible zero-retention purge, so it must independently refuse an
+    // underpaid report rather than trusting that phase 1 already validated it -
+    // a client can POST here directly with a valid session.
+    const gate = buildPaymentGate(report);
+    if (!gate.fullyPaid) {
+      return res.status(409).json({
+        error:
+          `Report payment is incomplete: ${gate.paidAmount.toFixed(2)} AUD paid of ` +
+          `${gate.feeAmount.toFixed(2)} AUD. Download will be available once all ` +
+          'installments are completed and the full fee has been received.',
+        paidAmount: gate.paidAmount,
+        feeAmount: gate.feeAmount,
+        remainingAmount: gate.remainingAmount,
+        paymentState: gate.paymentState,
+      });
     }
 
     await executePurgeOnDownload(reportId, user?.id, req.ip);
@@ -1962,10 +2060,11 @@ app.post('/api/admin/reports/:id/decline', authenticateUser, requireAdmin, async
         });
         console.error(
           `[AdminDecline] In-band PayPal void failed for report ${reportId}; enqueued job ${jobId} for retry.`,
-          voidError?.message || voidError
-        );
+        voidError?.message || voidError
+      );
       }
     }
+
 
     // Send Rejection Email
     try {

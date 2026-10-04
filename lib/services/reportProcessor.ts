@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import { prisma } from '../prisma';
 import { compileCorrelationReport } from './correlationEngine';
 import { voidPayment } from './paypalService';
-import { getPaymentProgress } from './installmentPayment';
+import { buildPaymentGate, getPaymentProgress } from './installmentPayment';
 import { generateReportCollectionToken } from './authService';
 import { sendReportReadyNotification } from './emailService';
 import { logActivity } from './activityLogger';
@@ -76,7 +76,15 @@ export async function processReportGeneration(reportId: string): Promise<boolean
   if (report.status === 'COMPLETED' || report.status === 'DOWNLOADED_AND_PURGED') return false;
 
   const progress = await getPaymentProgress(report);
-  if (isProduction && !progress.fullyPaid) {
+  // Generation is on HOLD in EVERY environment until the cumulative paid total
+  // reaches the fee. This used to be gated on isProduction, which let a
+  // partially paid case be generated (and therefore become downloadable) in
+  // staging - the download endpoints also refuse to serve an underpaid report,
+  // so allowing it here would only produce an artifact nobody may collect.
+  //
+  // This shares buildPaymentGate with the listing/download endpoints so
+  // "fully paid" means exactly one thing across the whole codebase.
+  if (!buildPaymentGate(report).fullyPaid) {
     throw new Error(
       `Report ${reportId} has ${progress.remainingAmount.toFixed(2)} AUD outstanding (${progress.paidAmount.toFixed(2)} of ${progress.feeAmount.toFixed(2)} AUD paid). Generation is on HOLD until the full fee is paid.`
     );
