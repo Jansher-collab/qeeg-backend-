@@ -6,8 +6,8 @@ import { prisma } from '../lib/prisma';
 dotenv.config();
 
 async function main() {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@qeeg.com.au';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'SecureAdmin123!';
+  const adminEmail = process.env.ADMIN_EMAIL || 'neuroconcepts@adhd.com.au';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Neuroadmin122!';
 
   const passwordHash = await bcrypt.hash(adminPassword, 10);
 
