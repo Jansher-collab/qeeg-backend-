@@ -580,6 +580,95 @@ app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) =
   }
 });
 
+// Dedicated ADMIN sign-in. Administrators authenticate with email + password
+// ONLY - there is deliberately no TOTP/backup-code challenge on this path - and
+// a session is issued only when the account actually carries the ADMIN role.
+// Practitioner logins keep their existing 2FA-protected /api/auth/login flow.
+app.post('/api/auth/login/admin', authRateLimit, async (req: Request, res: Response) => {
+  try {
+    const { email, password, timeZone } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() },
+      include: { practitionerProfile: true },
+    });
+
+    // Identical wording to the practitioner path so an attacker cannot probe
+    // this endpoint to discover which addresses exist.
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const isValid = await verifyPassword(password, user.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    // Credentials are valid but the account is not an administrator: refuse
+    // outright instead of issuing a session for the wrong portal.
+    if (user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'This account does not have administrator access. Use the practitioner login instead.',
+        code: 'NOT_ADMIN',
+      });
+    }
+
+    const token = generateToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+    });
+
+    const cookieOpts = getSessionCookieOptions();
+    res.cookie(cookieOpts.name, token, cookieOpts);
+
+    await logActivity({
+      userId: user.id,
+      action: 'USER_LOGGED_IN',
+      details: { role: user.role, portal: 'admin', twoFactorEnabled: false },
+      ipAddress: req.ip || '127.0.0.1',
+    });
+
+    // Best-effort login alert, identical to the practitioner path: delivery
+    // failures are logged but never block the admin session.
+    const loginOccurredAt = new Date();
+    sendLoginAlertEmail(
+      user.email,
+      user.practitionerProfile?.fullName || user.email,
+      req.ip || '127.0.0.1',
+      loginOccurredAt,
+      timeZone
+    )
+      .then((emailResult) => {
+        if (!emailResult.success) {
+          console.error(
+            `[AuthEmail] Admin login alert email FAILED for ${user.email}: ${emailResult.error || 'unknown SMTP error'}`
+          );
+        }
+      })
+      .catch((e) => console.error('Failed to send admin login alert email:', e));
+
+    res.json({
+      message: 'Logged in successfully.',
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        twoFactorEnabled: user.totpEnabled,
+        practitionerProfile: user.practitionerProfile,
+      },
+    });
+  } catch (error: any) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: error.message || 'Login failed.' });
+  }
+});
+
 app.get('/api/auth/me', authenticateUser, (req: Request, res: Response) => {
   const user = (req as any).user;
   res.json({
