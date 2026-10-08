@@ -499,6 +499,19 @@ app.post('/api/auth/login', authRateLimit, async (req: Request, res: Response) =
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
+    // Strict portal boundary: this endpoint is the PRACTITIONER login, so an
+    // ADMIN account may never obtain a session here - administrators must use
+    // POST /api/auth/login/admin. The check runs AFTER the password so this
+    // response cannot be used to probe which addresses belong to an admin, and
+    // BEFORE the TOTP challenge so an admin is never prompted for a code it
+    // should not be entering here.
+    if (user.role === 'ADMIN') {
+      return res.status(403).json({
+        error: 'Admins must use the admin login page.',
+        code: 'ADMIN_LOGIN_FORBIDDEN',
+      });
+    }
+
     // TOTP 2FA challenge: if the account has 2FA enabled, require a valid
     // one-time code (or backup code) before issuing a session token.
     if (user.totpEnabled) {
@@ -612,7 +625,7 @@ app.post('/api/auth/login/admin', authRateLimit, async (req: Request, res: Respo
     // outright instead of issuing a session for the wrong portal.
     if (user.role !== 'ADMIN') {
       return res.status(403).json({
-        error: 'This account does not have administrator access. Use the practitioner login instead.',
+        error: 'Access denied: Admins only.',
         code: 'NOT_ADMIN',
       });
     }
